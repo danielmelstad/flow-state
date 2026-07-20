@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-clean — Remove worktrees for tasks
+# Usage: task-clean <TICKET-ID> | --completed | --stale | --list
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-clean <TICKET-ID> | --completed | --stale | --list"
+    echo ""
+    echo "Remove worktrees for tasks."
+    echo ""
+    echo "Modes:"
+    echo "  <TICKET-ID>    Remove worktrees for one task (guards against dirty state)"
+    echo "  --completed    Remove worktrees for all completed tasks"
+    echo "  --stale        Remove worktrees with no corresponding manifest"
+    echo "  --list         Show disk usage per task (no changes)"
+    echo ""
+    echo "Options:"
+    echo "  --force        Skip dirty-state checks"
+    echo "  -h, --help     Show this help"
+    exit "${1:-0}"
+}
+
+MODE=""
+TICKET=""
+FORCE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage 0 ;;
+        --completed) MODE="completed"; shift ;;
+        --stale) MODE="stale"; shift ;;
+        --list) MODE="list"; shift ;;
+        --force) FORCE=true; shift ;;
+        -*)
+            echo "Error: Unknown option $1" >&2
+            usage 1
+            ;;
+        *)
+            MODE="single"
+            TICKET="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$MODE" ]]; then
+    echo "Error: Need a ticket ID or mode flag" >&2
+    usage 1
+fi
+
+if [[ ! -d "$WORKTREES_DIR" ]]; then
+    echo "No worktrees directory found (.worktrees/)"
+    exit 0
+fi
+
+# Check if a task's worktrees have dirty state
+# Returns 0 if any worktree is dirty
+check_task_dirty() {
+    local ticket="$1"
+    local task_dir="$WORKTREES_DIR/$ticket"
+    [[ ! -d "$task_dir" ]] && return 1
+
+    for wt_dir in "$task_dir"/*/; do
+        [[ ! -d "$wt_dir" ]] && continue
+        if ! git -C "$wt_dir" diff --quiet 2>/dev/null || ! git -C "$wt_dir" diff --cached --quiet 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+clean_ticket() {
+    local ticket="$1"
+    local task_dir="$WORKTREES_DIR/$ticket"
+
+    if [[ ! -d "$task_dir" ]]; then
+        echo "  $ticket: no worktrees"
+        return 0
+    fi
+
+    # Dirty check
+    if [[ "$FORCE" != true ]] && check_task_dirty "$ticket"; then
+        echo -e "  $ticket: ${RED}has dirty worktrees, skipping${NC} (use --force to override)"
+        return 1
+    fi
+
+    echo -n "  $ticket: "
+    worktree_remove_task "$ticket" && {
+        echo -e "${GREEN}removed${NC}"
+        return 0
+    } || {
+        echo -e "${RED}failed${NC}"
+        return 1
+    }
+}
+
+case "$MODE" in
+    single)
+        echo -e "${BOLD}Cleaning worktrees for $TICKET...${NC}"
+        echo ""
+        clean_ticket "$TICKET"
+        ;;
+
+    completed)
+        echo -e "${BOLD}Cleaning worktrees for completed tasks...${NC}"
+        echo ""
+        cleaned=0
+        errors=0
+        for task_dir in "$WORKTREES_DIR"/*/; do
+            [[ ! -d "$task_dir" ]] && continue
+            ticket=$(basename "$task_dir")
+            manifest="$TASKS_DIR/$ticket.yaml"
+            if [[ -f "$manifest" ]]; then
+                status=$(yaml_value "$manifest" "status")
+                if [[ "$status" == "completed" ]]; then
+                    clean_ticket "$ticket" && ((cleaned++)) || ((errors++)) || true
+                fi
+            fi
+        done
+        echo ""
+        echo "Cleaned: $cleaned, Errors: $errors"
+        ;;
+
+    stale)
+        echo -e "${BOLD}Cleaning stale worktrees (no manifest)...${NC}"
+        echo ""
+        cleaned=0
+        errors=0
+        for task_dir in "$WORKTREES_DIR"/*/; do
+            [[ ! -d "$task_dir" ]] && continue
+            ticket=$(basename "$task_dir")
+            manifest="$TASKS_DIR/$ticket.yaml"
+            if [[ ! -f "$manifest" ]]; then
+                echo -e "  $ticket: ${YELLOW}no manifest found${NC}"
+                clean_ticket "$ticket" && ((cleaned++)) || ((errors++)) || true
+            fi
+        done
+        if [[ $cleaned -eq 0 && $errors -eq 0 ]]; then
+            echo "  No stale worktrees found"
+        else
+            echo ""
+            echo "Cleaned: $cleaned, Errors: $errors"
+        fi
+        ;;
+
+    list)
+        echo -e "${BOLD}Worktree disk usage:${NC}"
+        echo ""
+        printf "%-15s %-12s %-6s %s\n" "TASK" "STATUS" "REPOS" "SIZE"
+        printf "%-15s %-12s %-6s %s\n" "----" "------" "-----" "----"
+
+        total_size=0
+        for task_dir in "$WORKTREES_DIR"/*/; do
+            [[ ! -d "$task_dir" ]] && continue
+            ticket=$(basename "$task_dir")
+
+            # Get status from manifest
+            manifest="$TASKS_DIR/$ticket.yaml"
+            if [[ -f "$manifest" ]]; then
+                status=$(yaml_value "$manifest" "status")
+            else
+                status="no manifest"
+            fi
+
+            # Count repos
+            repo_count=0
+            for d in "$task_dir"/*/; do
+                [[ -d "$d" ]] && ((repo_count++)) || true
+            done
+
+            # Disk usage
+            size=$(du -sh "$task_dir" 2>/dev/null | cut -f1)
+
+            status_color=""
+            case "$status" in
+                active) status_color="${GREEN}" ;;
+                paused) status_color="${YELLOW}" ;;
+                completed) status_color="${BLUE}" ;;
+                *) status_color="${RED}" ;;
+            esac
+
+            printf "%-15s ${status_color}%-12s${NC} %-6s %s\n" "$ticket" "$status" "$repo_count" "$size"
+        done
+
+        echo ""
+        total=$(du -sh "$WORKTREES_DIR" 2>/dev/null | cut -f1)
+        echo "Total: $total"
+        ;;
+esac

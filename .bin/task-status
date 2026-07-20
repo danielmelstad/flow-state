@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-status — Show git state across repos for a task (or all tasks)
+# Usage: task-status [TICKET-ID]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-status [TICKET-ID]"
+    echo ""
+    echo "Without arguments: list all active tasks"
+    echo "With TICKET-ID: show detailed status for that task"
+    exit "${1:-0}"
+}
+
+show_task_detail() {
+    local ticket="$1"
+    local manifest="$TASKS_DIR/$ticket.yaml"
+
+    if [[ ! -f "$manifest" ]]; then
+        echo "Error: No manifest found for $ticket" >&2
+        echo "Run 'task-detect' to discover tasks or 'task-start $ticket <repos>' to create one" >&2
+        exit 1
+    fi
+
+    local status description
+    status=$(yaml_value "$manifest" "status")
+    description=$(yaml_value "$manifest" "description")
+
+    echo -e "${BOLD}Task: $ticket${NC}"
+    echo -e "Status: ${CYAN}$status${NC}"
+    [[ -n "$description" ]] && echo -e "Description: $description"
+    echo ""
+
+    local repos
+    repos=$(yaml_repos "$manifest")
+
+    printf "%-25s %-15s %-6s %-10s %-10s %s\n" "REPO" "BRANCH" "LOC" "ON-BRANCH" "DIRTY" "AHEAD/BEHIND"
+    printf "%-25s %-15s %-6s %-10s %-10s %s\n" "----" "------" "---" "---------" "-----" "------------"
+
+    while IFS= read -r repo; do
+        [[ -z "$repo" ]] && continue
+        local branch
+        branch=$(yaml_repo_branch "$manifest" "$repo")
+
+        # Determine working path (worktree or main repo)
+        local work_path loc
+        if worktree_exists "$ticket" "$repo"; then
+            work_path="$WORKTREES_DIR/$ticket/$repo"
+            loc="wt"
+        else
+            work_path="$PROJECTS_DIR/$repo"
+            loc="repo"
+        fi
+
+        if [[ ! -d "$work_path/.git" ]] && [[ ! -f "$work_path/.git" ]]; then
+            # For worktrees, .git is a file not a dir
+            if [[ ! -d "$PROJECTS_DIR/$repo/.git" ]]; then
+                printf "%-25s %-15s %-6s %-10s %-10s %s\n" "$repo" "$branch" "$loc" "MISSING" "-" "-"
+                continue
+            fi
+        fi
+
+        # Check if on the task branch
+        local current_branch on_branch dirty ahead_behind
+        current_branch=$(git -C "$work_path" branch --show-current 2>/dev/null || echo "detached")
+
+        if [[ "$current_branch" == "$branch" ]]; then
+            on_branch="${GREEN}yes${NC}"
+        else
+            on_branch="${YELLOW}no ($current_branch)${NC}"
+        fi
+
+        # Check dirty state
+        if git -C "$work_path" diff --quiet 2>/dev/null && git -C "$work_path" diff --cached --quiet 2>/dev/null; then
+            dirty="${GREEN}clean${NC}"
+        else
+            local staged unstaged
+            staged=$(git -C "$work_path" diff --cached --numstat 2>/dev/null | wc -l)
+            unstaged=$(git -C "$work_path" diff --numstat 2>/dev/null | wc -l)
+            dirty="${RED}${staged}s/${unstaged}u${NC}"
+        fi
+
+        # Check ahead/behind vs origin (use main repo for ref checks)
+        local repo_path="$PROJECTS_DIR/$repo"
+        ahead_behind="-"
+        if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+            local upstream="origin/$branch"
+            if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/$upstream" 2>/dev/null; then
+                local ahead behind
+                ahead=$(git -C "$repo_path" rev-list --count "$upstream..$branch" 2>/dev/null || echo "?")
+                behind=$(git -C "$repo_path" rev-list --count "$branch..$upstream" 2>/dev/null || echo "?")
+                ahead_behind="+${ahead}/-${behind}"
+            else
+                # Check ahead of main/master
+                for base in main master; do
+                    if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$base" 2>/dev/null; then
+                        local ahead
+                        ahead=$(git -C "$repo_path" rev-list --count "origin/$base..$branch" 2>/dev/null || echo "?")
+                        ahead_behind="+${ahead} vs $base"
+                        break
+                    fi
+                done
+            fi
+        fi
+
+        printf "%-25s %-15s %-6s ${on_branch}%-1s  ${dirty}%-1s  %s\n" "$repo" "$branch" "$loc" "" "" "$ahead_behind"
+    done <<< "$repos"
+
+    # Show notes if present
+    echo ""
+    local notes
+    notes=$(awk '/^notes: \|/{found=1; next} found && /^  /{print substr($0,3)} found && /^[^ ]/{exit}' "$manifest")
+    if [[ -n "$notes" ]]; then
+        echo -e "${BOLD}Notes:${NC}"
+        echo "$notes"
+    fi
+}
+
+show_all_tasks() {
+    if [[ ! -d "$TASKS_DIR" ]] || ! ls "$TASKS_DIR"/*.yaml &>/dev/null; then
+        echo "No task manifests found in .tasks/"
+        echo "Run 'task-detect' to discover existing cross-repo tasks"
+        echo "Or 'task-start <TICKET> <repo1> [repo2] ...' to create one"
+        exit 0
+    fi
+
+    printf "%-15s %-12s %-6s %-4s %s\n" "TASK" "STATUS" "REPOS" "WTs" "DESCRIPTION"
+    printf "%-15s %-12s %-6s %-4s %s\n" "----" "------" "-----" "---" "-----------"
+
+    for manifest in "$TASKS_DIR"/*.yaml; do
+        local ticket status description repo_count wt_count
+        ticket=$(basename "$manifest" .yaml)
+        status=$(yaml_value "$manifest" "status")
+        description=$(yaml_value "$manifest" "description")
+        repo_count=$(yaml_repos "$manifest" | grep -c . || echo 0)
+        wt_count=$(worktree_count "$ticket")
+
+        local status_color
+        case "$status" in
+            active) status_color="${GREEN}" ;;
+            in-review) status_color="${CYAN}" ;;
+            paused) status_color="${YELLOW}" ;;
+            completed) status_color="${BLUE}" ;;
+            *) status_color="${NC}" ;;
+        esac
+
+        # Truncate description
+        if [[ ${#description} -gt 50 ]]; then
+            description="${description:0:47}..."
+        fi
+
+        printf "%-15s ${status_color}%-12s${NC} %-6s %-4s %s\n" "$ticket" "$status" "$repo_count" "$wt_count" "$description"
+    done
+}
+
+case "${1:-}" in
+    -h|--help) usage 0 ;;
+    "") show_all_tasks ;;
+    *) show_task_detail "$1" ;;
+esac

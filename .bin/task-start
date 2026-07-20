@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-start — Create branches + worktrees across repos + generate task manifest
+# Usage: task-start <TICKET-ID> <repo1> [repo2] [repo3] ...
+# Example: task-start TASK-124 repo-a repo-b
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-start <TICKET-ID> <repo1> [repo2] [repo3] ..."
+    echo ""
+    echo "Creates a branch named <TICKET-ID> in each specified repo,"
+    echo "sets up worktrees at .worktrees/<TICKET-ID>/<repo>/,"
+    echo "and generates a task manifest at .tasks/<TICKET-ID>.yaml"
+    echo ""
+    echo "Options:"
+    echo "  -d, --description TEXT   Task description (optional)"
+    echo "  -b, --base BRANCH        Base branch to create from (default: main)"
+    echo "  -h, --help               Show this help"
+    exit "${1:-0}"
+}
+
+DESCRIPTION=""
+BASE_BRANCH="main"
+TICKET=""
+REPOS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d|--description) DESCRIPTION="$2"; shift 2 ;;
+        -b|--base) BASE_BRANCH="$2"; shift 2 ;;
+        -h|--help) usage 0 ;;
+        -*)
+            echo "Error: Unknown option $1" >&2
+            usage 1
+            ;;
+        *)
+            if [[ -z "$TICKET" ]]; then
+                TICKET="$1"
+            else
+                REPOS+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$TICKET" ]] || [[ ${#REPOS[@]} -eq 0 ]]; then
+    echo "Error: Need a ticket ID and at least one repo" >&2
+    usage 1
+fi
+
+# Check manifest doesn't already exist
+if [[ -f "$TASKS_DIR/$TICKET.yaml" ]]; then
+    echo "Error: Task manifest already exists at .tasks/$TICKET.yaml" >&2
+    echo "Use task-status $TICKET to see current state" >&2
+    exit 1
+fi
+
+# Validate repos exist
+for repo in "${REPOS[@]}"; do
+    if [[ ! -d "$PROJECTS_DIR/$repo/.git" ]]; then
+        echo "Error: $repo is not a git repo in $PROJECTS_DIR" >&2
+        exit 1
+    fi
+done
+
+# Create branches
+echo "Creating branch '$TICKET' in ${#REPOS[@]} repo(s)..."
+CREATED=()
+for repo in "${REPOS[@]}"; do
+    repo_path="$PROJECTS_DIR/$repo"
+    echo -n "  $repo: "
+
+    # Check if branch already exists
+    if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$TICKET" 2>/dev/null; then
+        echo "branch already exists, skipping create"
+        CREATED+=("$repo")
+        continue
+    fi
+
+    # Fetch latest and create branch from base
+    git -C "$repo_path" fetch --quiet origin 2>/dev/null || true
+    if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$BASE_BRANCH" 2>/dev/null; then
+        git -C "$repo_path" branch "$TICKET" "$BASE_BRANCH"
+    elif git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null; then
+        git -C "$repo_path" branch "$TICKET" "origin/$BASE_BRANCH"
+    else
+        echo "Warning: base branch '$BASE_BRANCH' not found, creating from HEAD" >&2
+        git -C "$repo_path" branch "$TICKET"
+    fi
+    echo "created"
+    CREATED+=("$repo")
+done
+
+# Create worktrees
+if [[ ${#CREATED[@]} -gt 0 ]]; then
+    echo ""
+    echo "Creating worktrees..."
+    for repo in "${CREATED[@]}"; do
+        echo -n "  $repo: "
+        wt_path=$(worktree_create "$TICKET" "$repo" "$TICKET") && {
+            echo -e "${GREEN}$wt_path${NC}"
+        } || {
+            echo -e "${RED}failed${NC}"
+        }
+    done
+fi
+
+# Generate manifest
+mkdir -p "$TASKS_DIR"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
+
+cat > "$TASKS_DIR/$TICKET.yaml" << EOF
+task: $TICKET
+created: $TIMESTAMP
+status: active
+repos:
+EOF
+
+for repo in "${CREATED[@]}"; do
+    echo "  - name: $repo" >> "$TASKS_DIR/$TICKET.yaml"
+    echo "    branch: $TICKET" >> "$TASKS_DIR/$TICKET.yaml"
+done
+
+if [[ -n "$DESCRIPTION" ]]; then
+    echo "description: \"$DESCRIPTION\"" >> "$TASKS_DIR/$TICKET.yaml"
+else
+    echo "description: \"\"" >> "$TASKS_DIR/$TICKET.yaml"
+fi
+
+cat >> "$TASKS_DIR/$TICKET.yaml" << 'EOF'
+notes: |
+  ## Checklist
+
+  ## Session Log
+EOF
+echo "  $(date +%Y-%m-%d): Task started" >> "$TASKS_DIR/$TICKET.yaml"
+
+echo ""
+echo "Task manifest created: .tasks/$TICKET.yaml"
+echo "Worktrees ready at: .worktrees/$TICKET/"

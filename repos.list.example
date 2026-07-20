@@ -1,0 +1,12 @@
+# Repositories in this workspace, consumed by workspace-bootstrap.
+# Format: name|origin-url   (# comments and blank lines ignored)
+#
+# Copy to repos.list and edit, or generate from an existing workspace:
+#   workspace-bootstrap --snapshot
+#
+# repos.list is untracked on purpose: it is machine/team specific.
+# Tip: repos whose tooling pushes from headless sessions should use HTTPS
+# remotes (gh credential helper works without an ssh-agent).
+repo-a|git@github.com:your-org/repo-a.git
+repo-b|git@github.com:your-org/repo-b.git
+repo-c|https://github.com/your-org/repo-c.git

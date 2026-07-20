@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-detect — Scan repos for shared ticket branches, create manifests
+# Usage: task-detect [--dry-run]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+# Ticket pattern: PREFIX-NUMBER (with optional suffix)
+# Matches PROJECT-NUMBER ticket IDs (TASK-123, INFRA-42-suffix, ...); override via env TICKET_PATTERN
+TICKET_PATTERN="${TICKET_PATTERN:-^[A-Z][A-Z0-9]*-[0-9]+}"
+
+DRY_RUN=false
+[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && {
+    echo "Usage: task-detect [--dry-run]"
+    echo ""
+    echo "Scans all git repos for branches matching ticket patterns"
+    echo "(pattern: $TICKET_PATTERN)"
+    echo "and creates task manifests for tickets that appear in 2+ repos."
+    echo "Also scans .worktrees/ for existing worktree directories."
+    echo ""
+    echo "Options:"
+    echo "  --dry-run   Show what would be created without writing files"
+    exit 0
+}
+
+# Associative arrays:
+# TICKET_REPOS[ticket] = space-separated "repo:branch" (one per unique repo, best branch wins)
+# SEEN[ticket:repo] = 1 (dedup tracker)
+declare -A TICKET_REPOS
+declare -A SEEN
+
+# add_ticket_repo <ticket> <repo> <branch>
+# Only keeps one branch per ticket+repo combo. Prefers exact ticket match over suffixed.
+add_ticket_repo() {
+    local ticket="$1" repo="$2" branch="$3"
+    local key="${ticket}:${repo}"
+
+    if [[ -n "${SEEN[$key]:-}" ]]; then
+        # Already have this repo for this ticket.
+        # Replace only if new branch is exact match and old one wasn't.
+        if [[ "$branch" == "$ticket" ]]; then
+            # Remove old entry for this repo and add exact match
+            TICKET_REPOS["$ticket"]=$(echo "${TICKET_REPOS[$ticket]}" | tr ' ' '\n' | grep -v "^${repo}:" || true)
+            TICKET_REPOS["$ticket"]+=" $repo:$branch"
+        fi
+        return
+    fi
+
+    SEEN["$key"]=1
+    TICKET_REPOS["$ticket"]+="$repo:$branch "
+}
+
+echo -e "${BOLD}Scanning repos for ticket branches...${NC}"
+echo ""
+
+# Scan each repo
+for repo_path in "$PROJECTS_DIR"/*/; do
+    [[ ! -d "$repo_path/.git" ]] && continue
+    repo=$(basename "$repo_path")
+
+    # Skip non-project dirs
+    [[ "$repo" == ".tasks" || "$repo" == ".bin" || "$repo" == ".docs" || "$repo" == ".worktrees" ]] && continue
+
+    echo -n "  $repo: "
+    branch_count=0
+
+    # Get all local branches
+    while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        if [[ "$branch" =~ $TICKET_PATTERN ]]; then
+            ticket="${BASH_REMATCH[0]}"
+            add_ticket_repo "$ticket" "$repo" "$branch"
+            ((branch_count++)) || true
+        fi
+    done < <(git -C "$repo_path" branch --format='%(refname:short)' 2>/dev/null)
+
+    # Also check remote branches (for repos on main that have remote ticket branches)
+    while IFS= read -r ref; do
+        [[ -z "$ref" ]] && continue
+        branch="${ref#origin/}"
+        if [[ "$branch" =~ $TICKET_PATTERN ]]; then
+            ticket="${BASH_REMATCH[0]}"
+            if [[ -z "${SEEN[${ticket}:${repo}]:-}" ]]; then
+                add_ticket_repo "$ticket" "$repo" "$branch"
+                ((branch_count++)) || true
+            fi
+        fi
+    done < <(git -C "$repo_path" branch -r --format='%(refname:short)' 2>/dev/null | grep "^origin/" | grep -v "origin/HEAD" || true)
+
+    if [[ $branch_count -gt 0 ]]; then
+        echo -e "${CYAN}$branch_count ticket branch(es)${NC}"
+    else
+        echo "no ticket branches"
+    fi
+done
+
+# Scan .worktrees/ for existing worktree directories
+if [[ -d "$WORKTREES_DIR" ]]; then
+    echo ""
+    echo -e "${BOLD}Scanning worktrees...${NC}"
+    for ticket_dir in "$WORKTREES_DIR"/*/; do
+        [[ ! -d "$ticket_dir" ]] && continue
+        local_ticket=$(basename "$ticket_dir")
+        wt_count=0
+        for wt_dir in "$ticket_dir"/*/; do
+            [[ ! -d "$wt_dir" ]] && continue
+            repo=$(basename "$wt_dir")
+            # Get branch from worktree
+            wt_branch=$(git -C "$wt_dir" branch --show-current 2>/dev/null || echo "$local_ticket")
+            if [[ "$wt_branch" =~ $TICKET_PATTERN ]]; then
+                ticket="${BASH_REMATCH[0]}"
+                if [[ -z "${SEEN[${ticket}:${repo}]:-}" ]]; then
+                    add_ticket_repo "$ticket" "$repo" "$wt_branch"
+                fi
+            fi
+            ((wt_count++)) || true
+        done
+        if [[ $wt_count -gt 0 ]]; then
+            echo -e "  $local_ticket: ${CYAN}$wt_count worktree(s)${NC}"
+        fi
+    done
+fi
+
+echo ""
+
+# Filter to multi-repo tickets and create manifests
+created=0
+skipped=0
+already_exists=0
+
+echo -e "${BOLD}Cross-repo tickets (2+ repos):${NC}"
+echo ""
+
+for ticket in $(echo "${!TICKET_REPOS[@]}" | tr ' ' '\n' | sort); do
+    entries="${TICKET_REPOS[$ticket]}"
+    # Count unique repos (non-empty entries)
+    repo_count=$(echo "$entries" | tr ' ' '\n' | sed '/^$/d' | wc -l)
+
+    if [[ $repo_count -lt 2 ]]; then
+        ((skipped++)) || true
+        continue
+    fi
+
+    manifest="$TASKS_DIR/$ticket.yaml"
+
+    if [[ -f "$manifest" ]]; then
+        echo -e "  $ticket: ${YELLOW}manifest exists${NC} ($repo_count repos)"
+        ((already_exists++)) || true
+        continue
+    fi
+
+    # Show unique repo names
+    repo_names=$(echo "$entries" | tr ' ' '\n' | sed '/^$/d' | cut -d: -f1 | sort -u | tr '\n' ' ')
+    echo -e "  $ticket: ${GREEN}$repo_count repos${NC} — $repo_names"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        continue
+    fi
+
+    # Create manifest
+    mkdir -p "$TASKS_DIR"
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
+
+    cat > "$manifest" << EOF
+task: $ticket
+created: $TIMESTAMP
+status: active
+repos:
+EOF
+
+    while IFS=: read -r r b; do
+        [[ -z "$r" ]] && continue
+        echo "  - name: $r" >> "$manifest"
+        echo "    branch: $b" >> "$manifest"
+    done < <(echo "$entries" | tr ' ' '\n' | sed '/^$/d' | sort)
+
+    cat >> "$manifest" << EOF
+description: ""
+notes: |
+  ## Checklist
+
+  ## Session Log
+  $(date +%Y-%m-%d): Auto-detected by task-detect
+EOF
+
+    ((created++)) || true
+done
+
+echo ""
+echo -e "${BOLD}Summary:${NC}"
+echo "  Created: $created manifest(s)"
+echo "  Already existed: $already_exists"
+echo "  Single-repo tickets skipped: $skipped"
+
+if [[ "$DRY_RUN" == true ]]; then
+    echo ""
+    echo "(Dry run — no files written. Remove --dry-run to create manifests.)"
+fi

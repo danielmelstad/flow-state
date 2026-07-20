@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-finish — Check uncommitted work and mark task as completed
+# Usage: task-finish <TICKET-ID> [--force] [--cleanup]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-finish <TICKET-ID> [--force] [--cleanup]"
+    echo ""
+    echo "Post-merge step: run after the task's PRs are merged."
+    echo "Checks for uncommitted work across all repos in the task."
+    echo "If clean, marks the task manifest as completed."
+    echo "To validate, push, and create the PRs, use the /finish-task skill."
+    echo ""
+    echo "Options:"
+    echo "  --force     Mark completed even with dirty repos"
+    echo "  --cleanup   Remove worktrees after marking complete"
+    exit "${1:-0}"
+}
+
+TICKET=""
+FORCE=false
+CLEANUP=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage 0 ;;
+        --force) FORCE=true; shift ;;
+        --cleanup) CLEANUP=true; shift ;;
+        *) TICKET="$1"; shift ;;
+    esac
+done
+
+if [[ -z "$TICKET" ]]; then
+    echo "Error: Need a ticket ID" >&2
+    usage 1
+fi
+
+MANIFEST="$TASKS_DIR/$TICKET.yaml"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "Error: No manifest found for $TICKET" >&2
+    exit 1
+fi
+
+echo -e "${BOLD}Checking $TICKET repos for uncommitted work...${NC}"
+echo ""
+
+repos=$(yaml_repos "$MANIFEST")
+dirty_repos=()
+unpushed_repos=()
+has_worktrees=false
+
+while IFS= read -r repo; do
+    [[ -z "$repo" ]] && continue
+    branch=$(yaml_repo_branch "$MANIFEST" "$repo")
+
+    # Use worktree path if available
+    work_path=""
+    if worktree_exists "$TICKET" "$repo"; then
+        work_path="$WORKTREES_DIR/$TICKET/$repo"
+        has_worktrees=true
+    else
+        work_path="$PROJECTS_DIR/$repo"
+    fi
+
+    if [[ ! -d "$PROJECTS_DIR/$repo/.git" ]]; then
+        echo -e "  $repo: ${RED}not found${NC}"
+        continue
+    fi
+
+    echo -n "  $repo: "
+
+    # Check dirty
+    if ! git -C "$work_path" diff --quiet 2>/dev/null || ! git -C "$work_path" diff --cached --quiet 2>/dev/null; then
+        dirty_repos+=("$repo")
+        echo -e "${RED}uncommitted changes${NC}"
+        git -C "$work_path" status --short 2>/dev/null | head -5 | sed 's/^/    /'
+        continue
+    fi
+
+    # Check unpushed commits
+    if git -C "$PROJECTS_DIR/$repo" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+        if git -C "$PROJECTS_DIR/$repo" show-ref --verify --quiet "refs/remotes/origin/$branch" 2>/dev/null; then
+            local_ahead=$(git -C "$PROJECTS_DIR/$repo" rev-list --count "origin/$branch..$branch" 2>/dev/null || echo 0)
+            if [[ "$local_ahead" -gt 0 ]]; then
+                unpushed_repos+=("$repo")
+                echo -e "${YELLOW}$local_ahead unpushed commit(s)${NC}"
+                continue
+            fi
+        else
+            # Remote branch doesn't exist — entire branch is unpushed
+            unpushed_repos+=("$repo")
+            echo -e "${YELLOW}branch not pushed to origin${NC}"
+            continue
+        fi
+    fi
+
+    echo -e "${GREEN}clean & pushed${NC}"
+done <<< "$repos"
+
+echo ""
+
+if [[ ${#dirty_repos[@]} -gt 0 ]]; then
+    echo -e "${RED}${#dirty_repos[@]} repo(s) have uncommitted changes:${NC} ${dirty_repos[*]}"
+    if [[ "$FORCE" != true ]]; then
+        echo "Commit or stash changes first, or use --force to mark completed anyway"
+        exit 1
+    fi
+fi
+
+if [[ ${#unpushed_repos[@]} -gt 0 ]]; then
+    echo -e "${YELLOW}${#unpushed_repos[@]} repo(s) have unpushed commits:${NC} ${unpushed_repos[*]}"
+fi
+
+# Mark manifest as completed
+sed -i "s/^status: .*/status: completed/" "$MANIFEST"
+echo -e "${GREEN}Task $TICKET marked as completed${NC}"
+
+# Handle worktree cleanup
+if [[ "$has_worktrees" == true ]]; then
+    if [[ "$CLEANUP" == true ]]; then
+        echo ""
+        echo "Removing worktrees..."
+        worktree_remove_task "$TICKET" && {
+            echo -e "${GREEN}Worktrees removed${NC}"
+        } || {
+            echo -e "${YELLOW}Some worktrees could not be removed${NC}"
+        }
+    else
+        wt_count=$(worktree_count "$TICKET")
+        if [[ "$wt_count" -gt 0 ]]; then
+            echo ""
+            echo "Worktrees still exist at .worktrees/$TICKET/ ($wt_count repos)"
+            echo "Run 'task-clean $TICKET' to remove them"
+        fi
+    fi
+fi

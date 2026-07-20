@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-prs — Create PRs across all repos for a task
+# Usage: task-prs <TICKET-ID> [--base main] [--title "PR title"] [--body "PR body"]
+# Requires: gh CLI (https://cli.github.com)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-prs <TICKET-ID> [options]"
+    echo ""
+    echo "Creates pull requests in all repos for a task."
+    echo "Pushes branches to origin first if needed."
+    echo ""
+    echo "Options:"
+    echo "  --base BRANCH   Target branch (default: main)"
+    echo "  --title TEXT     PR title (default: '<TICKET>: <description>')"
+    echo "  --body TEXT      PR body (default: auto-generated from manifest)"
+    echo "  --draft          Create as draft PRs"
+    echo "  --dry-run        Show what would happen without creating PRs"
+    echo "  -h, --help       Show this help"
+    exit "${1:-0}"
+}
+
+# Check gh is installed
+if ! command -v gh &>/dev/null; then
+    echo "Error: gh CLI not installed. Install from https://cli.github.com" >&2
+    exit 1
+fi
+
+if ! gh auth status &>/dev/null; then
+    echo "Error: gh not authenticated. Run 'gh auth login' first." >&2
+    exit 1
+fi
+
+TICKET=""
+BASE="main"
+TITLE=""
+BODY=""
+DRAFT=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage 0 ;;
+        --base) BASE="$2"; shift 2 ;;
+        --title) TITLE="$2"; shift 2 ;;
+        --body) BODY="$2"; shift 2 ;;
+        --draft) DRAFT=true; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        -*) echo "Error: Unknown option $1" >&2; usage 1 ;;
+        *) TICKET="$1"; shift ;;
+    esac
+done
+
+if [[ -z "$TICKET" ]]; then
+    echo "Error: Need a ticket ID" >&2
+    usage 1
+fi
+
+MANIFEST="$TASKS_DIR/$TICKET.yaml"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "Error: No manifest found for $TICKET" >&2
+    exit 1
+fi
+
+description=$(yaml_value "$MANIFEST" "description")
+[[ -z "$TITLE" ]] && TITLE="$TICKET: $description"
+[[ -z "$TITLE" || "$TITLE" == "$TICKET: " ]] && TITLE="$TICKET"
+
+if [[ -z "$BODY" ]]; then
+    repos_list=$(yaml_repos "$MANIFEST")
+    BODY="## $TICKET
+
+$description
+
+### Repos in this task
+"
+    while IFS= read -r repo; do
+        [[ -z "$repo" ]] && continue
+        BODY+="- $repo
+"
+    done <<< "$repos_list"
+fi
+
+echo -e "${BOLD}Creating PRs for $TICKET...${NC}"
+echo ""
+
+repos=$(yaml_repos "$MANIFEST")
+created=0
+errors=0
+
+while IFS= read -r repo; do
+    [[ -z "$repo" ]] && continue
+    branch=$(yaml_repo_branch "$MANIFEST" "$repo")
+
+    # Use worktree path for git operations if available
+    work_path=$(worktree_path "$TICKET" "$repo") || true
+    repo_path="$PROJECTS_DIR/$repo"
+
+    echo -n "  $repo ($branch → $BASE): "
+
+    if [[ ! -d "$repo_path/.git" ]]; then
+        echo -e "${RED}repo not found${NC}"
+        ((errors++)) || true
+        continue
+    fi
+
+    # Check if branch exists
+    if ! git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+        echo -e "${YELLOW}branch not found, skipping${NC}"
+        continue
+    fi
+
+    # Check if there are any commits ahead of base
+    for base_ref in "origin/$BASE" "$BASE"; do
+        if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$BASE" 2>/dev/null; then
+            ahead=$(git -C "$repo_path" rev-list --count "origin/$BASE..$branch" 2>/dev/null || echo 0)
+            if [[ "$ahead" -eq 0 ]]; then
+                echo -e "${YELLOW}no commits ahead of $BASE, skipping${NC}"
+                continue 2
+            fi
+            break
+        fi
+    done
+
+    if [[ "$DRY_RUN" == true ]]; then
+        echo -e "${CYAN}would create PR${NC}"
+        continue
+    fi
+
+    # Push branch to origin
+    if ! git -C "$repo_path" push -u origin "$branch" 2>/dev/null; then
+        echo -e "${RED}push failed${NC}"
+        ((errors++)) || true
+        continue
+    fi
+
+    # Create PR (use worktree path so gh picks up correct repo context)
+    draft_flag=""
+    [[ "$DRAFT" == true ]] && draft_flag="--draft"
+
+    pr_url=$(cd "$work_path" && gh pr create \
+        --head "$branch" \
+        --base "$BASE" \
+        --title "$TITLE" \
+        --body "$BODY" \
+        $draft_flag 2>&1) || {
+        # Check if PR already exists
+        if echo "$pr_url" | grep -q "already exists"; then
+            echo -e "${YELLOW}PR already exists${NC}"
+            continue
+        fi
+        echo -e "${RED}failed: $pr_url${NC}"
+        ((errors++)) || true
+        continue
+    }
+
+    echo -e "${GREEN}$pr_url${NC}"
+    ((created++)) || true
+done <<< "$repos"
+
+echo ""
+echo -e "${BOLD}Summary:${NC} $created PR(s) created, $errors error(s)"
+
+if [[ "$DRY_RUN" == true ]]; then
+    echo "(Dry run — no PRs created)"
+fi

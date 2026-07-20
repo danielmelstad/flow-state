@@ -1,0 +1,35 @@
+# CLAUDE.local.md
+
+Workspace-specific context for THIS machine/team. Copy this template to
+CLAUDE.local.md and fill it in; the file is untracked by design. The generic
+workflow lives in CLAUDE.md, which imports this file.
+
+## About this workspace
+
+<One paragraph: what kind of repositories live here, what the tasks look
+like, which team owns them.>
+
+## Issue tracker connection
+
+- Tracker: <e.g. Jira via the Atlassian MCP plugin (cloudId `your-site.atlassian.net`),
+  Linear via its MCP server, GitHub Issues via `gh`, ...>
+- Status mapping (manifest cache -> tracker status): `active` -> <...> |
+  `in-review` -> <...> | `paused` -> <...> | `completed` -> <...>
+
+## Repository Map
+
+| Repo | Purpose | Common Tickets |
+|------|---------|----------------|
+| `repo-a` | <purpose> | <ticket prefixes> |
+| `repo-b` | <purpose> | <ticket prefixes> |
+
+## Common Repo Clusters
+
+Tasks with these prefixes typically touch these repos together:
+
+- **PREFIX**: repo-a + repo-b
+
+## Gate configuration
+
+<Which repos have a pinned validation gate (tests/lint/format commands) and
+how their remotes are set up. Delete this section if not using a gate.>

@@ -1,0 +1,217 @@
+# task-lib — Shared library for task scripts
+# Source this file, do not execute directly.
+# Usage: SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#        source "$SCRIPT_DIR/task-lib"
+
+# --- Constants ---
+# Workspace root = parent of the .bin/ directory this file lives in
+PROJECTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TASKS_DIR="$PROJECTS_DIR/.tasks"
+WORKTREES_DIR="$PROJECTS_DIR/.worktrees"
+
+# --- Colors ---
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# --- YAML Helpers ---
+
+# Parse a simple top-level YAML value
+yaml_value() {
+    local file="$1" key="$2"
+    grep "^${key}:" "$file" 2>/dev/null | sed "s/^${key}:[[:space:]]*//" | sed 's/^"//' | sed 's/"$//'
+}
+
+# Parse repo names from manifest
+yaml_repos() {
+    local file="$1"
+    awk '/^repos:/{found=1; next} found && /^  - name:/{print $3} found && /^[^ ]/{if(!/^  /)found=0}' "$file"
+}
+
+# Parse branch for a specific repo from manifest
+yaml_repo_branch() {
+    local file="$1" repo="$2"
+    awk -v repo="$repo" '
+        /^repos:/{found=1; next}
+        found && /^  - name:/ && $3==repo {matched=1; next}
+        found && matched && /^    branch:/{print $2; exit}
+        found && matched && /^  - name:/{exit}
+        found && /^[^ ]/{if(!/^  /)exit}
+    ' "$file"
+}
+
+# --- Worktree Helpers ---
+
+# Returns the default branch (main or master) for a repo
+# Usage: repo_default_branch <repo-name>
+repo_default_branch() {
+    local repo="$1"
+    local repo_path="$PROJECTS_DIR/$repo"
+    for branch in main master; do
+        if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+            echo "$branch"
+            return 0
+        fi
+    done
+    # Fallback: check remote
+    for branch in main master; do
+        if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$branch" 2>/dev/null; then
+            echo "$branch"
+            return 0
+        fi
+    done
+    echo "main"
+    return 1
+}
+
+# Check if a worktree exists for a ticket+repo
+# Usage: worktree_exists <ticket> <repo>
+worktree_exists() {
+    local ticket="$1" repo="$2"
+    [[ -d "$WORKTREES_DIR/$ticket/$repo" ]]
+}
+
+# Return the working path for a ticket+repo (worktree if exists, else main repo)
+# Returns 0 if worktree, 1 if main repo
+# Usage: path=$(worktree_path <ticket> <repo>)
+worktree_path() {
+    local ticket="$1" repo="$2"
+    if worktree_exists "$ticket" "$repo"; then
+        echo "$WORKTREES_DIR/$ticket/$repo"
+        return 0
+    else
+        echo "$PROJECTS_DIR/$repo"
+        return 1
+    fi
+}
+
+# Create a worktree for a ticket+repo+branch
+# Handles: branch checked out in main repo (switches main to default first)
+# Usage: worktree_create <ticket> <repo> <branch>
+worktree_create() {
+    local ticket="$1" repo="$2" branch="$3"
+    local repo_path="$PROJECTS_DIR/$repo"
+    local wt_path="$WORKTREES_DIR/$ticket/$repo"
+
+    # Already exists
+    if [[ -d "$wt_path" ]]; then
+        echo "$wt_path"
+        return 0
+    fi
+
+    mkdir -p "$WORKTREES_DIR/$ticket"
+
+    # If the branch is currently checked out in the main repo, switch main to default branch
+    local current_branch
+    current_branch=$(git -C "$repo_path" branch --show-current 2>/dev/null || echo "")
+    if [[ "$current_branch" == "$branch" ]]; then
+        local default_branch
+        default_branch=$(repo_default_branch "$repo")
+        if [[ "$default_branch" != "$branch" ]]; then
+            git -C "$repo_path" checkout "$default_branch" 2>/dev/null || {
+                echo "Error: Cannot switch $repo from $branch to $default_branch" >&2
+                return 1
+            }
+        fi
+    fi
+
+    # Ensure branch exists locally
+    if ! git -C "$repo_path" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+        if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$branch" 2>/dev/null; then
+            git -C "$repo_path" branch "$branch" "origin/$branch" 2>/dev/null
+        else
+            echo "Error: Branch '$branch' not found in $repo" >&2
+            return 1
+        fi
+    fi
+
+    # Create worktree
+    if git -C "$repo_path" worktree add "$wt_path" "$branch" 2>/dev/null; then
+        echo "$wt_path"
+        return 0
+    else
+        echo "Error: Failed to create worktree for $repo ($branch)" >&2
+        return 1
+    fi
+}
+
+# Remove a single worktree
+# Usage: worktree_remove <ticket> <repo>
+worktree_remove() {
+    local ticket="$1" repo="$2"
+    local repo_path="$PROJECTS_DIR/$repo"
+    local wt_path="$WORKTREES_DIR/$ticket/$repo"
+
+    if [[ ! -d "$wt_path" ]]; then
+        return 0
+    fi
+
+    git -C "$repo_path" worktree remove "$wt_path" 2>/dev/null || {
+        # Force remove if normal remove fails (e.g., dirty)
+        git -C "$repo_path" worktree remove --force "$wt_path" 2>/dev/null || {
+            echo "Error: Could not remove worktree at $wt_path" >&2
+            return 1
+        }
+    }
+
+    # Clean up empty ticket directory
+    if [[ -d "$WORKTREES_DIR/$ticket" ]] && [[ -z "$(ls -A "$WORKTREES_DIR/$ticket" 2>/dev/null)" ]]; then
+        rmdir "$WORKTREES_DIR/$ticket" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# Remove all worktrees for a task
+# Usage: worktree_remove_task <ticket>
+worktree_remove_task() {
+    local ticket="$1"
+    local task_dir="$WORKTREES_DIR/$ticket"
+
+    if [[ ! -d "$task_dir" ]]; then
+        return 0
+    fi
+
+    local errors=0
+    for wt_dir in "$task_dir"/*/; do
+        [[ ! -d "$wt_dir" ]] && continue
+        local repo
+        repo=$(basename "$wt_dir")
+        worktree_remove "$ticket" "$repo" || ((errors++)) || true
+    done
+
+    # Clean up task directory
+    if [[ -d "$task_dir" ]] && [[ -z "$(ls -A "$task_dir" 2>/dev/null)" ]]; then
+        rmdir "$task_dir" 2>/dev/null || true
+    fi
+
+    return $errors
+}
+
+# Check if a worktree has dirty state
+# Usage: worktree_is_dirty <ticket> <repo>
+worktree_is_dirty() {
+    local ticket="$1" repo="$2"
+    local wt_path
+    wt_path=$(worktree_path "$ticket" "$repo")
+    ! git -C "$wt_path" diff --quiet 2>/dev/null || ! git -C "$wt_path" diff --cached --quiet 2>/dev/null
+}
+
+# Count worktrees for a ticket
+# Usage: worktree_count <ticket>
+worktree_count() {
+    local ticket="$1"
+    local task_dir="$WORKTREES_DIR/$ticket"
+    if [[ ! -d "$task_dir" ]]; then
+        echo 0
+        return
+    fi
+    local count=0
+    for d in "$task_dir"/*/; do
+        [[ -d "$d" ]] && ((count++)) || true
+    done
+    echo "$count"
+}

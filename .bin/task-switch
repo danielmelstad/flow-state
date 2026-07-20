@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-switch — Create/verify worktrees for a task
+# Usage: task-switch <TICKET-ID>
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-switch <TICKET-ID>"
+    echo ""
+    echo "Creates worktrees for all repos in the task manifest."
+    echo "If worktrees already exist, verifies they are ready."
+    exit "${1:-0}"
+}
+
+TICKET=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage 0 ;;
+        -*) echo "Error: Unknown option $1" >&2; usage 1 ;;
+        *) TICKET="$1"; shift ;;
+    esac
+done
+
+if [[ -z "$TICKET" ]]; then
+    echo "Error: Need a ticket ID" >&2
+    usage 1
+fi
+
+MANIFEST="$TASKS_DIR/$TICKET.yaml"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "Error: No manifest found for $TICKET" >&2
+    echo "Run 'task-detect' or 'task-start $TICKET <repos>' first" >&2
+    exit 1
+fi
+
+repos=$(yaml_repos "$MANIFEST")
+errors=0
+
+echo -e "${BOLD}Setting up worktrees for $TICKET...${NC}"
+echo ""
+
+while IFS= read -r repo; do
+    [[ -z "$repo" ]] && continue
+    branch=$(yaml_repo_branch "$MANIFEST" "$repo")
+
+    echo -n "  $repo → $branch: "
+
+    if [[ ! -d "$PROJECTS_DIR/$repo/.git" ]]; then
+        echo -e "${RED}repo not found${NC}"
+        ((errors++)) || true
+        continue
+    fi
+
+    if worktree_exists "$TICKET" "$repo"; then
+        # Verify correct branch
+        local_branch=$(git -C "$WORKTREES_DIR/$TICKET/$repo" branch --show-current 2>/dev/null || echo "")
+        if [[ "$local_branch" == "$branch" ]]; then
+            echo -e "${GREEN}ready${NC} ($WORKTREES_DIR/$TICKET/$repo)"
+        else
+            echo -e "${YELLOW}exists but on '$local_branch'${NC}"
+        fi
+    else
+        wt_path=$(worktree_create "$TICKET" "$repo" "$branch") && {
+            echo -e "${GREEN}created${NC} ($wt_path)"
+        } || {
+            echo -e "${RED}failed${NC}"
+            ((errors++)) || true
+        }
+    fi
+done <<< "$repos"
+
+echo ""
+if [[ $errors -gt 0 ]]; then
+    echo -e "${YELLOW}$errors repo(s) had issues. Run 'task-status $TICKET' for details.${NC}"
+    exit 1
+fi
+echo -e "Worktrees ready at: ${BOLD}.worktrees/$TICKET/${NC}"
+if [[ -d "$WORKTREES_DIR/$TICKET" ]]; then
+    ls -1 "$WORKTREES_DIR/$TICKET/" 2>/dev/null | sed 's/^/  /'
+fi

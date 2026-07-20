@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-pr-status — Check PR status across repos for a task
+# Usage: task-pr-status <TICKET-ID>
+# Requires: gh CLI (https://cli.github.com)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/task-lib"
+
+usage() {
+    echo "Usage: task-pr-status <TICKET-ID>"
+    echo ""
+    echo "Shows PR status across all repos for a task."
+    echo "Displays: PR state, review status, checks, merge status."
+    exit "${1:-0}"
+}
+
+# Check gh is installed
+if ! command -v gh &>/dev/null; then
+    echo "Error: gh CLI not installed. Install from https://cli.github.com" >&2
+    exit 1
+fi
+
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage 0
+
+TICKET="${1:-}"
+if [[ -z "$TICKET" ]]; then
+    echo "Error: Need a ticket ID" >&2
+    usage 1
+fi
+
+MANIFEST="$TASKS_DIR/$TICKET.yaml"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "Error: No manifest found for $TICKET" >&2
+    exit 1
+fi
+
+echo -e "${BOLD}PR Status for $TICKET${NC}"
+echo ""
+
+printf "%-25s %-10s %-12s %-15s %s\n" "REPO" "STATE" "REVIEWS" "CHECKS" "URL"
+printf "%-25s %-10s %-12s %-15s %s\n" "----" "-----" "-------" "------" "---"
+
+repos=$(yaml_repos "$MANIFEST")
+
+while IFS= read -r repo; do
+    [[ -z "$repo" ]] && continue
+    branch=$(yaml_repo_branch "$MANIFEST" "$repo")
+
+    # Use worktree path if available (gh needs repo context)
+    work_path=$(worktree_path "$TICKET" "$repo") || true
+
+    if [[ ! -d "$PROJECTS_DIR/$repo/.git" ]]; then
+        printf "%-25s ${RED}%-10s${NC} %-12s %-15s %s\n" "$repo" "no repo" "-" "-" "-"
+        continue
+    fi
+
+    # Find PR for this branch
+    pr_json=$(cd "$work_path" && gh pr list --head "$branch" --json number,state,url,reviewDecision,statusCheckRollup --limit 1 2>/dev/null) || {
+        printf "%-25s ${YELLOW}%-10s${NC} %-12s %-15s %s\n" "$repo" "gh error" "-" "-" "-"
+        continue
+    }
+
+    if [[ "$pr_json" == "[]" || -z "$pr_json" ]]; then
+        printf "%-25s %-10s %-12s %-15s %s\n" "$repo" "no PR" "-" "-" "-"
+        continue
+    fi
+
+    state=$(echo "$pr_json" | python3 -c "import sys,json; d=json.load(sys.stdin)[0]; print(d.get('state','?'))" 2>/dev/null || echo "?")
+    url=$(echo "$pr_json" | python3 -c "import sys,json; d=json.load(sys.stdin)[0]; print(d.get('url',''))" 2>/dev/null || echo "")
+    review=$(echo "$pr_json" | python3 -c "import sys,json; d=json.load(sys.stdin)[0]; print(d.get('reviewDecision','') or 'pending')" 2>/dev/null || echo "?")
+
+    # Summarize checks
+    checks=$(echo "$pr_json" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)[0]
+checks = d.get('statusCheckRollup') or []
+if not checks:
+    print('none')
+else:
+    states = {}
+    for c in checks:
+        s = c.get('conclusion') or c.get('status') or 'pending'
+        states[s] = states.get(s, 0) + 1
+    parts = []
+    for s, n in sorted(states.items()):
+        parts.append(f'{n} {s}')
+    print(', '.join(parts))
+" 2>/dev/null || echo "?")
+
+    # Color state
+    case "$state" in
+        OPEN) state_color="${GREEN}" ;;
+        CLOSED) state_color="${RED}" ;;
+        MERGED) state_color="${CYAN}" ;;
+        *) state_color="${NC}" ;;
+    esac
+
+    # Color review
+    case "$review" in
+        APPROVED) review_color="${GREEN}" ;;
+        CHANGES_REQUESTED) review_color="${RED}" ;;
+        *) review_color="${YELLOW}" ;;
+    esac
+
+    printf "%-25s ${state_color}%-10s${NC} ${review_color}%-12s${NC} %-15s %s\n" "$repo" "$state" "$review" "$checks" "$url"
+done <<< "$repos"

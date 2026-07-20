@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+#
+# workspace-bootstrap — recreate a multi-repo workspace on a new machine.
+#
+# The set of repositories is data, not code: it lives in repos.list at the
+# workspace root (one "name|origin-url" per line, # comments allowed).
+#
+# Usage:
+#   git clone <workspace-remote-url> projects
+#   cd projects
+#   .bin/workspace-bootstrap              # clone every repo in repos.list
+#   .bin/workspace-bootstrap --snapshot   # (re)generate repos.list from the
+#                                         # repos currently cloned here
+#
+# Idempotent: already-cloned repos are skipped, so it can also be used to
+# fetch repos added to repos.list after the initial setup.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_LIST="$ROOT/repos.list"
+cd "$ROOT" || exit 1
+
+command -v git >/dev/null 2>&1 || { echo "error: git is required" >&2; exit 1; }
+
+snapshot() {
+    {
+        echo "# Repositories in this workspace — consumed by workspace-bootstrap."
+        echo "# Format: name|origin-url   (# comments and blank lines ignored)"
+        echo "# Regenerate from the current workspace: workspace-bootstrap --snapshot"
+        for d in "$ROOT"/*/; do
+            [ -d "$d/.git" ] || continue
+            name="$(basename "$d")"
+            url="$(git -C "$d" remote get-url origin 2>/dev/null)" || continue
+            echo "$name|$url"
+        done
+    } > "$REPO_LIST"
+    echo "Wrote $(grep -c '^[^#]' "$REPO_LIST") repos to $REPO_LIST"
+}
+
+if [ "${1:-}" = "--snapshot" ]; then
+    snapshot
+    exit 0
+fi
+
+if [ ! -f "$REPO_LIST" ]; then
+    echo "error: $REPO_LIST not found." >&2
+    echo "Create it from the template and edit in your repositories:" >&2
+    echo "  cp repos.list.example repos.list" >&2
+    echo "Or, on a machine that already has the repos cloned, generate it with:" >&2
+    echo "  workspace-bootstrap --snapshot" >&2
+    exit 1
+fi
+
+failures=0
+while IFS='|' read -r name url; do
+    case "$name" in ''|'#'*) continue ;; esac
+    if [ -d "$name/.git" ]; then
+        echo "skip   $name (already cloned)"
+    elif git clone "$url" "$name"; then
+        echo "cloned $name"
+    else
+        echo "FAILED $name ($url)" >&2
+        failures=$((failures + 1))
+    fi
+done < "$REPO_LIST"
+
+mkdir -p .tasks .worktrees
+
+if [ ! -f CLAUDE.local.md ] && [ -f CLAUDE.local.md.example ]; then
+    cp CLAUDE.local.md.example CLAUDE.local.md
+    echo "Created CLAUDE.local.md from the template; fill in your workspace specifics."
+fi
+
+echo ""
+if [ "$failures" -gt 0 ]; then
+    echo "$failures repo(s) failed to clone. Check credentials for the failed"
+    echo "URLs (SSH key for git@ URLs, credential helper for https:// URLs)."
+fi
+
+case ":$PATH:" in
+    *":$ROOT/.bin:"*) echo "PATH: .bin already included" ;;
+    *)
+        echo "Add the task scripts to your PATH, e.g.:"
+        echo "  echo 'export PATH=\"$ROOT/.bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc"
+        ;;
+esac
