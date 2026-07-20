@@ -218,7 +218,7 @@ Recommended plugins/connections, all optional and provider-agnostic:
 |------------|---------|----------|
 | Issue tracker MCP connection | Task state, scope, and session handoff live on the ticket; Claude reads it at session start and comments at session end | Atlassian plugin (Jira), Linear MCP, GitHub Issues via `gh` |
 | GitHub CLI (`gh`) | PR creation and status across repos (`task-prs`, `task-pr-status`, `/finish-task`) | `gh auth login`, plus `gh auth refresh -s workflow` if CI files are pushed |
-| Validation gate skill | `/finish-task` runs review/test/lint/docs before pushing when a gate is installed | a `no-mistakes`-style pipeline; falls back to `task-prs` without one |
+| Validation gate skill | `/finish-task` runs review/test/lint/docs before pushing when a gate is installed | a `no-mistakes`-style pipeline; falls back to `task-prs` without one. See `examples/example-service/` for a repo with a pinned gate |
 | Specialist agents | Cross-repo review, testing, docs (in `.claude/agents/`) | included in this repo |
 
 No tracker connected? Everything still works: task state falls back to the manifest `status` and `notes` fields.
@@ -233,6 +233,7 @@ The scripts make minimal assumptions. To adapt them:
 2. **`TICKET_PATTERN`** in `task-detect` — regex matching your ticket ID format
 3. **Skip list** in `task-detect` — directories to ignore when scanning (default: `.tasks`, `.bin`, `.docs`, `.worktrees`)
 4. **`CLAUDE.local.md`** — workspace-specific context for Claude Code
+5. **Per-repo setup** — see `examples/example-service/` for the reference shape of a project: project-level `CLAUDE.md`, pinned validation gate (`.no-mistakes.yaml` + `scripts/gate.sh`), exact-pinned dev dependencies
 
 `PROJECTS_DIR` is derived automatically from the script location. Everything else is derived from the manifests, so it works with any set of repositories.
 

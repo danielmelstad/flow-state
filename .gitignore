@@ -13,6 +13,15 @@
 !.bin/
 !.bin/**
 
+# Example reference project (tracked; its build artifacts are not)
+!examples/
+!examples/**
+examples/**/.venv-gate/
+examples/**/__pycache__/
+examples/**/.pytest_cache/
+examples/**/.ruff_cache/
+examples/**/*.egg-info/
+
 # Task manifests
 !.tasks/
 !.tasks/**

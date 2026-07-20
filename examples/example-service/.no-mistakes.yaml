@@ -1,0 +1,21 @@
+# Validation gate configuration.
+# Security note: commands and document.instructions are only honored from the
+# default branch, so changes here take effect after merge.
+#
+# Pipeline steps for this repo:
+#   review   - agent review, parks at a gate for a human/driver decision
+#   test     - full pytest suite via a bootstrapped venv (pinned deps)
+#   lint     - ruff check
+#   format   - ruff format, applied before the push step commits fixes
+#   document - placement policy below
+
+commands:
+  test: "scripts/gate.sh test"
+  lint: "scripts/gate.sh lint"
+  format: "scripts/gate.sh format"
+
+document:
+  instructions: |
+    README.md owns purpose and usage.
+    Docstrings own per-function behavior; no separate API docs.
+    CLAUDE.md owns commands and conventions; do not restate them elsewhere.
