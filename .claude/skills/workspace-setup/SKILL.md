@@ -43,7 +43,12 @@ filled in, tracker connected (or explicitly skipped), verified end to end.
    connection, or `gh issue list`) and record the status mapping in
    CLAUDE.local.md. If the MCP plugin is not yet installed/authenticated,
    give the user the exact steps (`/plugin`, then `/mcp` to authenticate).
-7. Smoke test with a throwaway ticket, then remove ALL traces:
+7. Global layer: if `~/.claude/CLAUDE.md` does not exist, offer to seed it
+   from `global/CLAUDE.md.example` (this edits the user's home directory, so
+   confirm first). Point at `global/README.md` for plugins, hooks, and
+   user-level skills. Never modify an existing `~/.claude/CLAUDE.md` or
+   `settings.json`; at most show what `global/` suggests merging.
+8. Smoke test with a throwaway ticket, then remove ALL traces:
 
    ```bash
    task-start TEST-1 <first-repo> -d "Setup smoke test"
@@ -53,7 +58,7 @@ filled in, tracker connected (or explicitly skipped), verified end to end.
    rm .tasks/TEST-1.yaml
    ```
 
-8. Report a final summary table: input -> where it landed (file/config), plus
+9. Report a final summary table: input -> where it landed (file/config), plus
    any steps the user still owes (PATH source, MCP auth, gate setup).
 
 ## Verification (done looks like this)
@@ -62,6 +67,8 @@ filled in, tracker connected (or explicitly skipped), verified end to end.
 - `CLAUDE.local.md` complete, no template placeholders
 - `task-status` runs bare (PATH) and exits 0
 - Tracker connection proven with a live read, or "no tracker" recorded
+- Global layer seeded from `global/`, or explicitly declined; an existing
+  `~/.claude` config left untouched either way
 - No smoke-test residue: `.worktrees/` empty, no TEST-1 branch or manifest
 - `git status` in the workspace repo is clean (`repos.list`, `CLAUDE.local.md`
   are untracked by design; never commit them)

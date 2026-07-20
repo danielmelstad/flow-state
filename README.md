@@ -207,10 +207,12 @@ The manifest is deliberately thin machine state: it maps the ticket to repos and
 
 ## Claude Code Integration
 
-The workspace ships Claude Code configuration that automates the workflow end to end. Two files split generic from specific:
+The workspace ships Claude Code configuration that automates the workflow end to end. Configuration is layered (see `global/README.md` for the full model):
 
+- **`~/.claude/`** (global, per developer): personal rules, plugins, hooks, user-level skills. Seed a new machine from the templates in `global/`.
 - **`CLAUDE.md`** (tracked): the generic workflow, i.e. how tasks, manifests, worktrees, and the ticket lifecycle work.
 - **`CLAUDE.local.md`** (untracked, from `CLAUDE.local.md.example`): your repositories, your issue tracker connection, your team conventions.
+- **`<repo>/CLAUDE.md`** (per project): commands and conventions; see `examples/example-service/`.
 
 Recommended plugins/connections, all optional and provider-agnostic:
 

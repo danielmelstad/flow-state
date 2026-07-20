@@ -1,0 +1,18 @@
+# Global Rules
+
+These rules apply in every project, on top of any project CLAUDE.md.
+Copy to ~/.claude/CLAUDE.md.
+
+## Writing style
+- Never use em dashes in any output: prose, docs, commit messages, code comments, PR bodies. Use commas, colons, or parentheses instead.
+
+## Technical decisions
+- Do not give much weight to development cost. Prefer quality, simplicity, robustness, scalability, and long-term maintainability.
+
+## Engineering excellence
+- Hold lint, test failures, and test flakiness to the same high standard. If you see one, even if it is not caused by what you are working on right now, still get it fixed.
+
+## Git and PRs
+- Never add AI/agent co-author lines, "Generated with" footers, or any other agent attribution to commit messages or PR bodies.
+- When working on a ticketed task, prefix commit messages with the ticket ID (e.g. "ADA-999: Add deployment workflow").
+- Never force-push. Never commit directly to main in the work repos (the workspace repo itself is the exception).

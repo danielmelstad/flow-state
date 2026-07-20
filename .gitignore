@@ -13,6 +13,10 @@
 !.bin/
 !.bin/**
 
+# Global-layer templates (~/.claude seeding)
+!global/
+!global/**
+
 # Example reference project (tracked; its build artifacts are not)
 !examples/
 !examples/**
