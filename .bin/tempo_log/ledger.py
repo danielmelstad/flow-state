@@ -14,6 +14,7 @@ class Ledger:
         self._data = data
         self._data.setdefault("posted", {})
         self._data.setdefault("issues", {})
+        self._validate_shape()
 
     @classmethod
     def load(cls, path: Path) -> "Ledger":
@@ -28,6 +29,36 @@ class Ledger:
             data = {}
         return cls(path, data)
 
+    def _validate_shape(self) -> None:
+        if not isinstance(self._data["posted"], dict):
+            raise ValueError(
+                f"ledger {self.path} has an unexpected shape: 'posted' must be a dict"
+            )
+        for key, value in self._data["posted"].items():
+            if not isinstance(value, list):
+                raise ValueError(
+                    f"ledger {self.path} has an unexpected shape: 'posted' values must be lists"
+                )
+            for entry in value:
+                if not isinstance(entry, dict):
+                    raise ValueError(
+                        f"ledger {self.path} has an unexpected shape: 'posted' entries must be dicts"
+                    )
+
+        if not isinstance(self._data["issues"], dict):
+            raise ValueError(
+                f"ledger {self.path} has an unexpected shape: 'issues' must be a dict"
+            )
+        for key, value in self._data["issues"].items():
+            if not isinstance(value, dict):
+                raise ValueError(
+                    f"ledger {self.path} has an unexpected shape: 'issues' values must be dicts"
+                )
+            if "id" not in value:
+                raise ValueError(
+                    f"ledger {self.path} has an unexpected shape: issue '{key}' is missing 'id' key"
+                )
+
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
@@ -35,7 +66,7 @@ class Ledger:
         os.replace(tmp, self.path)
 
     def posted(self, day: date) -> list[dict]:
-        return list(self._data["posted"].get(day.isoformat(), []))
+        return [dict(r) for r in self._data["posted"].get(day.isoformat(), [])]
 
     def record(self, day: date, worklog_id: int, ticket: str, seconds: int, start: str) -> None:
         self._data["posted"].setdefault(day.isoformat(), []).append(

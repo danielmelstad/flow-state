@@ -1,4 +1,3 @@
-import json
 import pytest
 from datetime import date
 
@@ -39,3 +38,24 @@ def test_corrupt_file_is_an_error(tmp_path):
 
     with pytest.raises(ValueError):
         Ledger.load(p)
+
+
+def test_malformed_shape_is_an_error(tmp_path):
+    # posted is not a dict
+    p1 = tmp_path / "l1.json"
+    p1.write_text('{"posted": "x"}')
+    with pytest.raises(ValueError):
+        Ledger.load(p1)
+
+    # issues value missing 'id' key
+    p2 = tmp_path / "l2.json"
+    p2.write_text('{"issues": {"ADA-1": {}}}')
+    with pytest.raises(ValueError):
+        Ledger.load(p2)
+
+    # valid file with both sections loads
+    p3 = tmp_path / "l3.json"
+    p3.write_text('{"posted": {"2026-08-25": []}, "issues": {"ADA-1": {"id": 123, "summary": "Test"}}}')
+    led = Ledger.load(p3)
+    assert led.posted(date(2026, 8, 25)) == []
+    assert led.issue_id("ADA-1") == 123
