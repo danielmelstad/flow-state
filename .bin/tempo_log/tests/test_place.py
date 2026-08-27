@@ -56,6 +56,14 @@ def test_place_actual_past_midnight_raises(utc):
         place_actual(es, [Slot(time(23, 0), time(23, 30), "X")])
 
 
+def test_place_actual_unmoved_entry_may_cross_midnight(utc):
+    es = [entry(utc, "A-1", 60, time(23, 45))]
+    warnings = place_actual(es, [])
+    assert es[0].start == time(23, 45)
+    assert es[0].nudged_from is None
+    assert warnings and warnings[0].startswith("crosses midnight")
+
+
 def test_pack_sequential_from_window_start(utc):
     es = [entry(utc, "A-1", 90), entry(utc, "B-2", 30)]
     assert place_window(es, [], W, "pack", 30) == []

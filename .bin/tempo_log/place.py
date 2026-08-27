@@ -1,4 +1,4 @@
-"""Place entries on the day: actual (check only), pack, fit."""
+"""Place entries on the day: actual (nudge forward on collision, or check-only via check_actual), pack, fit."""
 
 from __future__ import annotations
 
@@ -63,10 +63,14 @@ def place_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
                 break
             cursor = hit[1]
         if cursor + e.seconds > 86400:
-            raise PlacementError(
-                f"{e.ticket or '(unattributed)'} cannot be placed before midnight in actual mode; "
-                "shorten the day or use --mode pack"
-            )
+            if cursor != original:
+                raise PlacementError(
+                    f"{e.ticket or '(unattributed)'} cannot be placed before midnight in actual mode; "
+                    "shorten the day or use --mode pack"
+                )
+            warnings.append(f"crosses midnight: {e.ticket or '(unattributed)'} {_fmt(e.start)}")
+            taken.append((cursor, cursor + e.seconds))
+            continue
         if cursor != original:
             e.nudged_from = e.start
             e.start = time_from_secs(cursor)

@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from tempo_log import cli
-from tempo_log.draft import draft_path, loads
+from tempo_log.draft import draft_path, dumps, loads
+from tempo_log.models import Draft, Entry
 
 CONFIG = """
 [tempo]
@@ -82,8 +83,10 @@ def test_scan_writes_draft_with_occupied_and_entries(hub, capsys):
     draft = loads(draft_path(hub / ".tempo-log", date(2026, 8, 25)).read_text())
     assert draft.mode == "actual"
     assert [s.ticket for s in draft.occupied] == ["EXIST-1: meeting"]
-    tickets = [e.ticket for e in draft.entries]
-    assert tickets == ["ADA-486", "WI-100", ""]  # one entry per ticket, first-activity order; s9 is unattributed
+    # one entry per ticket, first-activity order (07:12Z, 09:00Z, 12:00Z); s9 is unattributed
+    assert [(e.ticket, e.seconds, e.start) for e in draft.entries] == [
+        ("ADA-486", 1800, time(7, 12)), ("WI-100", 1800, time(9, 0)), ("", 1800, time(12, 0)),
+    ]
     assert not any(w.startswith("overlap") for w in draft.warnings)
     ada = next(e for e in draft.entries if e.ticket == "ADA-486")
     assert ada.description == "ADA-486: Summary of ADA-486"
@@ -155,6 +158,71 @@ def test_post_keep_start_refuses_overlap_in_actual(hub, capsys):
     code, t = run(hub, "post", "2026-08-25", "--dry-run")
     assert code == 0
     assert not any(m == "POST" for m, _, _ in t.calls)
+    out = capsys.readouterr().out
+    assert "nudged:" in out
+    wi_line = next(l for l in out.splitlines() if "WI-100" in l and "POST" in l)
+    assert "'startTime': '09:30:00'" in wi_line
+
+
+def test_post_rewinds_to_real_start_when_collision_gone(hub, capsys):
+    class NoOccupiedTransport(ScriptedTransport):
+        def request(self, method, url, headers, body):
+            if method == "GET" and "/4/worklogs/user/" in url:
+                self.calls.append((method, url, body))
+                return 200, {"results": [], "metadata": {}}
+            return super().request(method, url, headers, body)
+
+    day = date(2026, 8, 25)
+    entry = Entry(ticket="ADA-486", seconds=1800, start=time(9, 30), description="ADA-486: work",
+                  sources=[], first_activity=datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc))
+    entry.nudged_from = time(9, 0)
+    draft = Draft(day=day, mode="actual", window=None, timezone="UTC", entries=[entry], occupied=[], warnings=[])
+    p = draft_path(hub / ".tempo-log", day)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(dumps(draft))
+
+    code, t = run(hub, "post", day.isoformat(), "--dry-run", transport=NoOccupiedTransport())
+    assert code == 0
+    out = capsys.readouterr().out
+    ada_line = next(l for l in out.splitlines() if "ADA-486: work" in l and "POST" in l)
+    assert "'startTime': '09:00:00'" in ada_line
+
+
+def test_replace_does_not_nudge_past_own_worklogs(hub, capsys):
+    class SelfCollisionTransport(ScriptedTransport):
+        def __init__(self):
+            super().__init__()
+            self.extra_worklogs = []
+
+        def request(self, method, url, headers, body):
+            if method == "GET" and "/4/worklogs/user/" in url:
+                self.calls.append((method, url, body))
+                return 200, {"results": [
+                    {"tempoWorklogId": 9, "startDate": "2026-08-25", "startTime": "08:00:00",
+                     "timeSpentSeconds": 1800, "issue": {"id": 1}, "description": "EXIST-1: meeting"},
+                    *self.extra_worklogs,
+                ], "metadata": {}}
+            return super().request(method, url, headers, body)
+
+    t = SelfCollisionTransport()
+    run(hub, "scan", "2026-08-25", transport=t)
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    p.write_text(_drop_unattributed_entry(p.read_text()))
+    code, _ = run(hub, "post", "2026-08-25", transport=t)
+    assert code == 0
+    ledger = json.loads((hub / ".tempo-log" / "ledger.json").read_text())
+    ada_id = next(int(r["worklog_id"]) for r in ledger["posted"]["2026-08-25"] if r["ticket"] == "ADA-486")
+
+    # Tempo now reports ADA-486's own just-posted worklog as an occupied slot at the
+    # same start; without excluding it by id, ADA-486 would get nudged past itself.
+    t.extra_worklogs = [{"tempoWorklogId": ada_id, "startDate": "2026-08-25", "startTime": "07:12:00",
+                          "timeSpentSeconds": 1800, "issue": {"id": 2}, "description": "ADA-486: prior"}]
+
+    code, _ = run(hub, "post", "2026-08-25", "--replace", "--dry-run", transport=t)
+    assert code == 0
+    out = capsys.readouterr().out
+    ada_line = next(l for l in out.splitlines() if "ADA-486: Summary of ADA-486" in l and "POST" in l)
+    assert "'startTime': '07:12:00'" in ada_line
 
 
 def test_post_then_refuse_then_replace_then_undo(hub, capsys):

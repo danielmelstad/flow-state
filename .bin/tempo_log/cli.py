@@ -113,8 +113,10 @@ class Services:
             raise
         return f"{key}: {summary}" if summary else key
 
-    def occupied(self, day: date) -> list[Slot]:
+    def occupied(self, day: date, exclude_ids: set[int] = frozenset()) -> list[Slot]:
         results = self.tempo.worklogs_for_user(self.cfg.jira.account_id, day)
+        if exclude_ids:
+            results = [r for r in results if int(r.get("tempoWorklogId", -1)) not in exclude_ids]
         return slots_from_worklogs(results, self.cfg.placement.timezone, day)
 
 
@@ -164,23 +166,29 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
         if draft.day != day:
             raise DraftError(f"draft {path} is for {draft.day}, not {day}")
 
-        occupied = svc.occupied(day)
+        # Exclude this day's own already-posted worklogs from "occupied": otherwise a
+        # --replace re-post would see its own prior copies as collisions and nudge
+        # entries past themselves before those copies are even deleted.
+        previous = svc.ledger.posted(day)
+        exclude_ids = {int(r["worklog_id"]) for r in previous}
+        occupied = svc.occupied(day, exclude_ids)
         draft.occupied = occupied
         if draft.mode == "actual":
             if args.keep_start:
                 draft.warnings = place.check_actual(draft.entries, occupied)
             else:
                 for e in draft.entries:
-                    e.nudged_from = None
+                    if e.nudged_from is not None:
+                        e.start = e.nudged_from
+                        e.nudged_from = None
                 draft.warnings = place.place_actual(draft.entries, occupied)
         elif not args.keep_start:
             draft.entries.sort(key=lambda e: e.first_activity)
             draft.warnings = place.place_window(draft.entries, occupied, cfg.placement.window, draft.mode, cfg.rules.rounding_minutes)
         warnings = validate_for_post(draft, cfg.rules.rounding_minutes)
-        for w in warnings + [w for w in draft.warnings if w == "window_overflow"]:
+        for w in warnings + [w for w in draft.warnings if not w.startswith("overlap")]:
             out.write(f"warning: {w}\n")
 
-        previous = svc.ledger.posted(day)
         if previous and not args.replace:
             raise DraftError(f"{day} already has {len(previous)} posted worklog(s) in the ledger; use --replace to delete and re-post, or undo first")
 
