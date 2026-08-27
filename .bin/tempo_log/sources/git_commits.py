@@ -31,23 +31,27 @@ def discover_repos(hub_root: Path) -> list[Path]:
 def read_events(repos: list[Path], authors: list[str], start: datetime, end: datetime) -> list[RawEvent]:
     events: list[RawEvent] = []
     wanted = {a.lower() for a in authors}
+    seen: set[str] = set()
     for repo in repos:
         if not (repo / ".git").exists():
             continue
         cmd = [
             "git", "-C", str(repo), "log", "--all", "--no-merges",
-            f"--since={start.isoformat()}", f"--until={end.isoformat()}",
-            f"--format=%aI{_SEP}%ae{_SEP}%s",
+            f"--since={start.isoformat()}",
+            f"--format=%H{_SEP}%aI{_SEP}%ae{_SEP}%s",
         ]
         try:
             out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
         except (subprocess.CalledProcessError, FileNotFoundError):
             continue
         for line in out.splitlines():
-            parts = line.split(_SEP, 2)
-            if len(parts) != 3:
+            parts = line.split(_SEP, 3)
+            if len(parts) != 4:
                 continue
-            when, email, subject = parts
+            sha, when, email, subject = parts
+            if sha in seen:
+                continue
+            seen.add(sha)
             if email.lower() not in wanted:
                 continue
             ts = datetime.fromisoformat(when).astimezone(timezone.utc)
