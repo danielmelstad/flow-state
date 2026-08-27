@@ -70,6 +70,16 @@ def test_validate_rejects_missing_start_in_actual(utc):
         validate_for_post(d, 30)
 
 
+def test_validate_rejects_missing_start_in_pack(utc):
+    # pack/fit drafts normally get start assigned by placement before post, but a
+    # hand-edited draft (or --keep-start with a start stripped by hand) can still
+    # reach validate_for_post with start=None; every mode requires it.
+    d = sample(utc, "pack")
+    d.entries = [Entry("ADA-1", 1800, None, "", [], utc(2026, 8, 25, 9))]
+    with pytest.raises(DraftError, match="start"):
+        validate_for_post(d, 30)
+
+
 def test_validate_rejects_overlap_warning(utc):
     d = sample(utc)
     d.entries = d.entries[:1]

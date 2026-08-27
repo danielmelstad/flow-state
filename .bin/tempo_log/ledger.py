@@ -78,6 +78,21 @@ class Ledger:
         self._data["posted"].pop(day.isoformat(), None)
         self.save()
 
+    def forget(self, day: date, worklog_id: int) -> None:
+        """Remove a single posted record for a day (used as each delete succeeds, so a
+        partial failure mid-batch leaves the ledger consistent with what is actually
+        still in Tempo, instead of an all-or-nothing clear at the end)."""
+        key = day.isoformat()
+        records = self._data["posted"].get(key)
+        if not records:
+            return
+        remaining = [r for r in records if int(r.get("worklog_id", -1)) != int(worklog_id)]
+        if remaining:
+            self._data["posted"][key] = remaining
+        else:
+            self._data["posted"].pop(key, None)
+        self.save()
+
     def issue_id(self, key: str) -> int | None:
         entry = self._data["issues"].get(key)
         return int(entry["id"]) if entry else None

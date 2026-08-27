@@ -118,8 +118,8 @@ def validate_for_post(draft: Draft, rounding_minutes: int) -> list[str]:
             problems.append(f"{label}: seconds must be positive")
         elif e.seconds % (rounding_minutes * 60):
             warnings.append(f"{label}: {e.seconds} seconds is not a multiple of {rounding_minutes} minutes")
-        if draft.mode == "actual" and e.start is None:
-            problems.append(f"{label}: actual mode requires a start time")
+        if e.start is None:
+            problems.append(f"{label}: entry has no start time; run scan again or add start")
     problems += [w for w in draft.warnings if w.startswith("overlap")]
     if problems:
         raise DraftError("; ".join(problems))

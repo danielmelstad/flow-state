@@ -1,7 +1,8 @@
 import json
-import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -96,6 +97,14 @@ def test_scan_mode_override_pack(hub):
     assert draft.entries[0].start.hour == 8 and draft.entries[0].start.minute == 30  # after 08:00-08:30 occupied
 
 
+def test_day_bounds_spans_a_25_hour_dst_day():
+    # 2026-10-25 is when Europe/Oslo falls back out of summer time, so the local
+    # day is 25 hours long; start + timedelta(days=1) would get this wrong.
+    cfg = SimpleNamespace(placement=SimpleNamespace(timezone=ZoneInfo("Europe/Oslo")))
+    start, end = cli._day_bounds(date(2026, 10, 25), cfg)
+    assert end - start == timedelta(hours=25)
+
+
 def test_scan_range_writes_one_draft_per_day(hub):
     run(hub, "scan", "2026-08-25..2026-08-26")
     assert draft_path(hub / ".tempo-log", date(2026, 8, 25)).exists()
@@ -113,6 +122,20 @@ def test_post_refuses_unattributed_and_dry_run_posts_nothing(hub, capsys):
     code, t = run(hub, "post", "2026-08-25", "--dry-run")
     assert code == 1 and "unattributed" in capsys.readouterr().err
     assert not any(m == "POST" for m, _, _ in t.calls)
+
+
+def test_dry_run_posts_nothing_on_valid_draft(hub, capsys):
+    run(hub, "scan", "2026-08-25")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    p.write_text(_drop_unattributed_entry(p.read_text()))
+    code, t = run(hub, "post", "2026-08-25", "--dry-run")
+    out = capsys.readouterr().out
+    assert code == 0
+    assert not any(m == "POST" for m, _, _ in t.calls)
+    assert "dry run" in out
+    ledger_path = hub / ".tempo-log" / "ledger.json"
+    posted = json.loads(ledger_path.read_text())["posted"] if ledger_path.exists() else {}
+    assert "2026-08-25" not in posted
 
 
 def test_post_then_refuse_then_replace_then_undo(hub, capsys):
@@ -139,6 +162,37 @@ def test_post_then_refuse_then_replace_then_undo(hub, capsys):
     assert code == 0
     assert len([1 for m, _, _ in t.calls if m == "DELETE"]) == len(posts)
     assert "2026-08-25" not in json.loads((hub / ".tempo-log" / "ledger.json").read_text())["posted"]
+
+
+def test_undo_survives_a_404_delete(hub, capsys):
+    run(hub, "scan", "2026-08-25")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    p.write_text(_drop_unattributed_entry(p.read_text()))
+    run(hub, "post", "2026-08-25")
+    posted_before = json.loads((hub / ".tempo-log" / "ledger.json").read_text())["posted"]["2026-08-25"]
+    assert len(posted_before) == 2
+
+    # Simulate a prior undo that deleted the first worklog in Tempo but crashed
+    # before the ledger was updated: the first DELETE now 404s (already gone),
+    # the second still succeeds.
+    t = ScriptedTransport()
+    orig = t.request
+    seen_deletes = {"n": 0}
+
+    def req(method, url, headers, body):
+        if method == "DELETE":
+            seen_deletes["n"] += 1
+            if seen_deletes["n"] == 1:
+                return 404, {"errorMessages": ["not found"]}
+            return 204, None
+        return orig(method, url, headers, body)
+
+    t.request = req
+    code, _ = run(hub, "undo", "2026-08-25", transport=t)
+    assert code == 0
+    assert seen_deletes["n"] == 2
+    ledger_after = json.loads((hub / ".tempo-log" / "ledger.json").read_text())
+    assert "2026-08-25" not in ledger_after["posted"]
 
 
 def test_show_prints_table(hub, capsys):

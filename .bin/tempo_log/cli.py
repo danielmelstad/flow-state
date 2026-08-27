@@ -31,14 +31,19 @@ def parse_days(text: str, today: date) -> list[date]:
         a, b = text.split("..", 1)
         start, end = date.fromisoformat(a), date.fromisoformat(b)
         if end < start:
-            raise argparse.ArgumentTypeError("range end is before start")
+            raise ValueError("range end is before start")
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
     return [date.fromisoformat(text)]
 
 
 def _day_bounds(day: date, cfg: Config) -> tuple[datetime, datetime]:
-    start = datetime.combine(day, time(0, 0), tzinfo=cfg.placement.timezone).astimezone(timezone.utc)
-    return start, start + timedelta(days=1)
+    # Compute the end bound from midnight of the next local day, not start + 24h:
+    # on a DST transition day the local day is 23 or 25 hours long, and start +
+    # timedelta(days=1) would cut off or duplicate an hour of events.
+    tz = cfg.placement.timezone
+    start = datetime.combine(day, time(0, 0), tzinfo=tz).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), time(0, 0), tzinfo=tz).astimezone(timezone.utc)
+    return start, end
 
 
 def _repos(cfg: Config) -> list[Path]:
@@ -136,7 +141,10 @@ def cmd_show(args, cfg: Config, svc: Services, out: TextIO) -> int:
 
 
 def _worklog_payload(cfg: Config, day: date, e: Entry, issue_id: int) -> dict:
-    assert e.start is not None
+    if e.start is None:
+        # validate_for_post should have caught this already; this is a defensive
+        # fallback, not the primary check.
+        raise DraftError(f"{e.ticket or '(unattributed)'}: entry has no start time; run scan again or add start")
     return {
         "authorAccountId": cfg.jira.account_id,
         "issueId": issue_id,
@@ -182,8 +190,7 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
 
         if previous:
             for rec in previous:
-                svc.tempo.delete_worklog(int(rec["worklog_id"]))
-            svc.ledger.clear(day)
+                _delete_and_forget(svc, day, int(rec["worklog_id"]))
         for e, p in payloads:
             worklog_id = svc.tempo.create_worklog(p)
             svc.ledger.record(day, worklog_id, e.ticket, e.seconds, p["startTime"][:5])
@@ -193,6 +200,19 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
     return 0
 
 
+def _delete_and_forget(svc: Services, day: date, worklog_id: int) -> None:
+    """Delete a worklog and remove its ledger record; a 404 means it is already
+    gone (a previous run deleted it before a partial failure), so treat that as
+    success rather than aborting with earlier records already deleted and later
+    ones still live and unrecorded-as-deleted."""
+    try:
+        svc.tempo.delete_worklog(worklog_id)
+    except HttpError as exc:
+        if exc.status != 404:
+            raise
+    svc.ledger.forget(day, worklog_id)
+
+
 def cmd_undo(args, cfg: Config, svc: Services, out: TextIO) -> int:
     for day in args.days:
         records = svc.ledger.posted(day)
@@ -200,9 +220,8 @@ def cmd_undo(args, cfg: Config, svc: Services, out: TextIO) -> int:
             out.write(f"{day}: nothing recorded in the ledger\n")
             continue
         for rec in records:
-            svc.tempo.delete_worklog(int(rec["worklog_id"]))
+            _delete_and_forget(svc, day, int(rec["worklog_id"]))
             out.write(f"deleted tempo worklog {rec['worklog_id']} ({rec['ticket']}, {rec['start']})\n")
-        svc.ledger.clear(day)
     return 0
 
 
@@ -216,32 +235,34 @@ def cmd_resolve(args, cfg: Config, svc: Services, out: TextIO) -> int:
     return 0
 
 
-def build_parser(today: date) -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tempo-log", description="Derive time from activity, review, post to Tempo.")
     p.add_argument("--config", type=Path, default=HUB_ROOT / ".tempo-log.toml")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
-    days = lambda text: parse_days(text, today)  # noqa: E731
+    # "days" is kept as the raw string here and resolved to actual dates in main,
+    # after the config (and its timezone) is loaded, so "today"/"yesterday" are
+    # computed in the configured timezone rather than UTC.
 
     s = sub.add_parser("scan", help="build a reviewable draft for a day or range")
-    s.add_argument("days", type=days, metavar="DATE|FROM..TO|today|yesterday")
+    s.add_argument("days", metavar="DATE|FROM..TO|today|yesterday")
     s.add_argument("--mode", choices=MODES)
     s.add_argument("--offline", action="store_true", help="skip Tempo/Jira lookups")
     s.set_defaults(func=cmd_scan)
 
     s = sub.add_parser("show", help="print a draft")
-    s.add_argument("days", type=days)
+    s.add_argument("days")
     s.set_defaults(func=cmd_show)
 
     s = sub.add_parser("post", help="validate a draft and post it to Tempo")
-    s.add_argument("days", type=days)
+    s.add_argument("days")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--replace", action="store_true", help="delete previously posted worklogs for the day first")
     s.add_argument("--keep-start", action="store_true", help="pack/fit: keep start times from the draft")
     s.set_defaults(func=cmd_post)
 
     s = sub.add_parser("undo", help="delete worklogs the ledger recorded for a day")
-    s.add_argument("days", type=days)
+    s.add_argument("days")
     s.set_defaults(func=cmd_undo)
 
     s = sub.add_parser("resolve", help="'me' prints your account id; a key prints its issue id")
@@ -256,10 +277,13 @@ def main(argv: list[str] | None = None, *, transport: Transport | None = None,
     # capsys and similar stream-swapping test fixtures see everything written here.
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
-    today = datetime.now(timezone.utc).date()
-    args = build_parser(today).parse_args(argv)
+    args = build_parser().parse_args(argv)
     try:
         cfg = load_config(args.config)
+        # Resolve "today"/"yesterday"/ranges only once the configured timezone is
+        # known, so they mean the user's local day rather than the UTC day.
+        if args.command != "resolve":
+            args.days = parse_days(args.days, datetime.now(cfg.placement.timezone).date())
         ledger = Ledger.load(cfg.state_dir / "ledger.json")
         svc = Services(cfg, transport or UrllibTransport(), dict(os.environ) if env is None else env, ledger)
         return args.func(args, cfg, svc, out)
