@@ -1,3 +1,5 @@
+import os
+import time as time_module
 import tomllib
 from datetime import date, time
 from pathlib import Path
@@ -90,3 +92,49 @@ def test_render_table_mentions_unattributed_and_totals(utc):
     out = render_table(sample(utc))
     assert "UNATTRIBUTED" in out
     assert "2h00m" in out  # total 5400 + 1800
+
+
+def test_dumps_escapes_control_characters(utc):
+    d = sample(utc)
+    d.entries[0].description = 'has "quote", back\\slash, new\nline, tab\tand \x7f del'
+    text = dumps(d)
+    tomllib.loads(text)
+    back = loads(text)
+    assert back.entries[0].description == d.entries[0].description
+
+
+def test_loads_naive_first_activity_is_utc(monkeypatch, utc):
+    original_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "America/New_York")
+    time_module.tzset()
+    try:
+        text = """
+date = "2026-08-25"
+mode = "actual"
+timezone = "UTC"
+
+[[entries]]
+ticket = "ADA-1"
+seconds = 1800
+start = "09:00"
+first_activity = "2026-08-25T09:00:00"
+"""
+        d = loads(text)
+        assert d.entries[0].first_activity == utc(2026, 8, 25, 9)
+    finally:
+        if original_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", original_tz)
+        time_module.tzset()
+
+
+def test_loads_rejects_non_table_entries():
+    text = """
+date = "2026-08-25"
+mode = "actual"
+timezone = "UTC"
+entries = "foo"
+"""
+    with pytest.raises(DraftError):
+        loads(text)

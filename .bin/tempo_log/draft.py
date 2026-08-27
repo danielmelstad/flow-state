@@ -15,8 +15,9 @@ class DraftError(Exception):
 
 
 def _q(value: str) -> str:
-    # JSON string escaping is a valid TOML basic string for our content.
-    return json.dumps(value, ensure_ascii=False)
+    # JSON string escaping is a valid TOML basic string for our content, except
+    # that TOML rejects a literal U+007F (DEL); json.dumps leaves it unescaped.
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007F")
 
 
 def _t(t: time) -> str:
@@ -70,8 +71,11 @@ def loads(text: str) -> Draft:
     mode = str(data.get("mode", "actual"))
     if mode not in MODES:
         raise DraftError(f"mode must be one of {', '.join(MODES)}")
+    raw_entries = data.get("entries", [])
+    if not isinstance(raw_entries, list) or not all(isinstance(r, dict) for r in raw_entries):
+        raise DraftError("entries must be an array of tables")
     entries: list[Entry] = []
-    for i, raw in enumerate(data.get("entries", []), 1):
+    for i, raw in enumerate(raw_entries, 1):
         where = f"entries[{i}]"
         try:
             seconds = int(raw.get("seconds", 0))
@@ -79,7 +83,10 @@ def loads(text: str) -> Draft:
             raise DraftError(f"{where}: seconds must be an integer") from exc
         fa_raw = raw.get("first_activity")
         if fa_raw:
-            first = datetime.fromisoformat(str(fa_raw).replace("Z", "+00:00")).astimezone(timezone.utc)
+            first = datetime.fromisoformat(str(fa_raw).replace("Z", "+00:00"))
+            if first.tzinfo is None:
+                first = first.replace(tzinfo=timezone.utc)
+            first = first.astimezone(timezone.utc)
         else:
             first = datetime.combine(day, time(0, 0), tzinfo=timezone.utc)
         start = _time(raw["start"], where) if raw.get("start") else None
@@ -89,8 +96,11 @@ def loads(text: str) -> Draft:
             first_activity=first,
             original_seconds=int(raw["original_seconds"]) if raw.get("original_seconds") is not None else None,
         ))
+    raw_occupied = data.get("occupied", [])
+    if not isinstance(raw_occupied, list) or not all(isinstance(o, dict) for o in raw_occupied):
+        raise DraftError("occupied must be an array of tables")
     occupied = [Slot(_time(o["start"], "occupied"), _time(o["end"], "occupied"), str(o.get("ticket", "")))
-                for o in data.get("occupied", [])]
+                for o in raw_occupied]
     return Draft(day=day, mode=mode, window=data.get("window"), timezone=str(data.get("timezone", "UTC")),
                  entries=entries, occupied=occupied, warnings=[str(w) for w in data.get("warnings", [])])
 
@@ -140,7 +150,7 @@ def render_table(draft: Draft) -> str:
         rows.append(f"{start:<6} {dur:<7} {ticket:<12} {e.description[:48]:<48} {', '.join(e.sources)}")
     total = sum(e.seconds for e in draft.entries)
     rows.append("")
-    rows.append(f"total {fmt_duration(total)}" + ("  (* scaled by fit)" if any(e.original_seconds for e in draft.entries) else ""))
+    rows.append(f"total {fmt_duration(total)}" + ("  (* scaled by fit)" if any(e.original_seconds is not None for e in draft.entries) else ""))
     for w in draft.warnings:
         rows.append(f"WARNING: {w}")
     return "\n".join(rows)
