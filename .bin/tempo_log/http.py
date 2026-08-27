@@ -18,7 +18,8 @@ class HttpError(Exception):
     def __init__(self, status: int, url: str, body: object, hint: str = ""):
         self.status, self.url, self.body = status, url, body
         detail = _extract_message(body)
-        msg = f"HTTP {status} from {url}" + (f": {detail}" if detail else "")
+        prefix = "network error" if status == 0 else f"HTTP {status}"
+        msg = f"{prefix} from {url}" + (f": {detail}" if detail else "")
         super().__init__(msg + (f" ({hint})" if hint else ""))
 
 
@@ -31,6 +32,8 @@ def _extract_message(body: object) -> str:
                 return "; ".join(parts)
             if isinstance(val, str):
                 return val
+            if isinstance(val, dict):
+                return "; ".join(f"{k}: {v}" for k, v in val.items())
     return ""
 
 
@@ -65,11 +68,11 @@ class UrllibTransport:
                     time.sleep(1.0)
                     continue
                 return exc.code, payload
-            except urllib.error.URLError:
+            except urllib.error.URLError as exc:
                 if attempt == 1:
                     time.sleep(1.0)
                     continue
-                raise
+                raise HttpError(0, url, {"message": str(exc.reason)}, hint="network error after retry") from exc
         raise RuntimeError("unreachable")
 
 

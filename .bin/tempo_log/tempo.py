@@ -26,12 +26,19 @@ class TempoClient:
     def worklogs_for_user(self, account_id: str, day: date) -> list[dict]:
         url = f"{self.base_url}/4/worklogs/user/{account_id}?from={day.isoformat()}&to={day.isoformat()}&limit=50"
         results: list[dict] = []
+        seen_urls: set[str] = set()
+        page_count = 0
         while url:
+            seen_urls.add(url)
             page = self._call("GET", url)
+            page_count += 1
             if not isinstance(page, dict):
                 break
             results.extend(page.get("results", []))
-            url = (page.get("metadata") or {}).get("next")
+            next_url = (page.get("metadata") or {}).get("next")
+            if next_url and (next_url in seen_urls or page_count > 200):
+                raise HttpError(200, url, page, hint="pagination loop detected")
+            url = next_url
         return results
 
     def create_worklog(self, payload: dict) -> int:

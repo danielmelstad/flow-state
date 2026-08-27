@@ -1,9 +1,13 @@
+import io
+import json
+import urllib.error
+import urllib.request
 from datetime import date
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from tempo_log.http import HttpError, TokenError, token_from_env
+from tempo_log.http import HttpError, TokenError, UrllibTransport, token_from_env
 from tempo_log.jira import JiraClient
 from tempo_log.tempo import TempoClient, slots_from_worklogs
 
@@ -86,3 +90,126 @@ def test_slots_from_worklogs_in_local_tz():
     slots = slots_from_worklogs(results, ZoneInfo("UTC"), date(2026, 8, 25))
     assert len(slots) == 1
     assert (slots[0].start.hour, slots[0].end.hour, slots[0].ticket) == (8, 9, "ADA-470: thing")
+
+
+class _FakeUrlResponse:
+    def __init__(self, status: int, body: bytes):
+        self.status = status
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "_FakeUrlResponse":
+        return self
+
+    def __exit__(self, *exc_info) -> bool:
+        return False
+
+
+def _no_sleep(monkeypatch):
+    monkeypatch.setattr("tempo_log.http.time.sleep", lambda *a, **k: None)
+
+
+def test_urllib_transport_success_json(monkeypatch):
+    _no_sleep(monkeypatch)
+    captured = []
+
+    def fake_urlopen(req, timeout=None):
+        captured.append(req)
+        return _FakeUrlResponse(200, json.dumps({"ok": True}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = UrllibTransport()
+
+    result = transport.request("GET", "https://x/y", {"Authorization": "Bearer tok"}, None)
+    assert result == (200, {"ok": True})
+    req = captured[-1]
+    assert req.get_header("Accept") == "application/json"
+    assert req.get_header("Authorization") == "Bearer tok"
+    assert req.get_header("Content-type") is None
+
+    result = transport.request("POST", "https://x/y", {"Authorization": "Bearer tok"}, {"a": 1})
+    assert result == (200, {"ok": True})
+    assert captured[-1].get_header("Content-type") == "application/json"
+
+
+def test_urllib_transport_4xx_no_retry(monkeypatch):
+    _no_sleep(monkeypatch)
+    url = "https://x/y"
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        raise urllib.error.HTTPError(url, 404, "nf", {}, io.BytesIO(json.dumps({"message": "nope"}).encode()))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = UrllibTransport()
+
+    result = transport.request("GET", url, {}, None)
+    assert len(calls) == 1
+    assert result == (404, {"message": "nope"})
+
+
+def test_urllib_transport_5xx_retries_once_then_returns(monkeypatch):
+    _no_sleep(monkeypatch)
+    url = "https://x/y"
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        raise urllib.error.HTTPError(url, 503, "unavailable", {}, io.BytesIO(json.dumps({"message": "down"}).encode()))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = UrllibTransport()
+
+    status, body = transport.request("GET", url, {}, None)
+    assert len(calls) == 2
+    assert status == 503
+
+
+def test_urllib_transport_5xx_then_success(monkeypatch):
+    _no_sleep(monkeypatch)
+    url = "https://x/y"
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(url, 503, "unavailable", {}, io.BytesIO(json.dumps({"message": "down"}).encode()))
+        return _FakeUrlResponse(200, json.dumps({"ok": True}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = UrllibTransport()
+
+    status, body = transport.request("GET", url, {}, None)
+    assert len(calls) == 2
+    assert (status, body) == (200, {"ok": True})
+
+
+def test_urllib_transport_network_error_becomes_http_error(monkeypatch):
+    _no_sleep(monkeypatch)
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    transport = UrllibTransport()
+
+    with pytest.raises(HttpError) as exc:
+        transport.request("GET", "https://x/y", {}, None)
+    assert exc.value.status == 0
+    assert "network" in str(exc.value).lower()
+
+
+def test_extract_message_dict_errors():
+    err = HttpError(400, "u", {"errors": {"summary": "required"}})
+    assert "summary: required" in str(err)
+
+
+def test_tempo_pagination_loop_detected():
+    first_url = "https://api.eu.tempo.io/4/worklogs/user/a?from=2026-08-25&to=2026-08-25&limit=50"
+    page = {"results": [], "metadata": {"next": first_url}}
+    t = FakeTransport([(200, page)])
+    with pytest.raises(HttpError, match="pagination"):
+        TempoClient("https://api.eu.tempo.io", "tok", t).worklogs_for_user("a", date(2026, 8, 25))
