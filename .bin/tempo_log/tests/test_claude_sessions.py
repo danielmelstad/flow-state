@@ -8,7 +8,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def test_read_events_filters_range_and_skips_junk(utc):
     events = read_events(FIXTURES, utc(2026, 8, 25), utc(2026, 8, 26))
-    assert [e.ts.hour for e in events] == [7, 7, 7, 7, 9]
+    assert [e.ts.hour for e in events] == [7, 7, 7, 7, 9, 12]
     assert all(e.source == "claude" for e in events)
 
 
@@ -19,9 +19,8 @@ def test_user_text_and_cwd_branch(utc):
     assert first.text == "work on ADA-486"
     assert first.cwd == "/hub"
     assert first.branch == "main"
-    last = events[-1]
-    assert last.cwd == "/hub/.worktrees/WI-100/svc"
-    assert last.branch == "WI-100"
+    wi_event = next(e for e in events if e.cwd == "/hub/.worktrees/WI-100/svc")
+    assert wi_event.branch == "WI-100"
 
 
 def test_tool_use_paths_extracted(utc):
@@ -44,3 +43,12 @@ def test_parse_record_ignores_non_message_types():
 
 def test_missing_dir_yields_nothing(tmp_path, utc):
     assert read_events(tmp_path / "nope", utc(2026, 1, 1), utc(2026, 1, 2)) == []
+
+
+def test_malformed_records_are_skipped_not_fatal(utc):
+    events = read_events(FIXTURES, utc(2026, 8, 25), utc(2026, 8, 26))
+    assert len(events) > 0
+    assert not any(e.session == "s9" and e.text == "bad ts" for e in events)
+    s9_events = [e for e in events if e.session == "s9"]
+    assert len(s9_events) == 1
+    assert s9_events[0].text == ""

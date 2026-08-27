@@ -6,4 +6,6 @@
 {"type":"file-history-snapshot","sessionId":"s1"}
 {"type":"user","timestamp":"2026-08-25T09:00:00.000Z","cwd":"/hub/.worktrees/WI-100/svc","gitBranch":"WI-100","sessionId":"s2","message":{"role":"user","content":"fix the test"}}
 {"type":"assistant","timestamp":"2026-08-26T10:00:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s3","message":{"role":"assistant","content":[{"type":"text","text":"next day"}]}}
+{"type":"user","timestamp":"yesterday-ish","cwd":"/hub","gitBranch":"main","sessionId":"s9","message":{"role":"user","content":"bad ts"}}
+{"type":"user","timestamp":"2026-08-25T12:00:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s9","message":"not a dict"}
 not json at all

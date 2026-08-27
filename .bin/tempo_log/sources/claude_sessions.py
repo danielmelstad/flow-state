@@ -40,7 +40,9 @@ def parse_record(obj: dict) -> RawEvent | None:
     raw_ts = obj.get("timestamp")
     if not isinstance(raw_ts, str):
         return None
-    message = obj.get("message") or {}
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        message = {}
     content = message.get("content")
     text = ""
     paths: list[str] = []
@@ -81,7 +83,10 @@ def read_events(projects_dir: Path, start: datetime, end: datetime) -> list[RawE
                     continue
                 if not isinstance(obj, dict):
                     continue
-                ev = parse_record(obj)
+                try:
+                    ev = parse_record(obj)
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    continue
                 if ev is not None and start <= ev.ts < end:
                     events.append(ev)
     events.sort(key=lambda e: e.ts)
