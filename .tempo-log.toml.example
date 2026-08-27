@@ -1,0 +1,28 @@
+# tempo-log configuration. Copy to .tempo-log.toml (untracked) and fill in.
+# Tokens are never stored here: export TEMPO_API_TOKEN and JIRA_API_TOKEN in your shell.
+
+[tempo]
+base_url = "https://api.eu.tempo.io"   # api.eu.tempo.io | api.us.tempo.io | api.tempo.io
+token_env = "TEMPO_API_TOKEN"
+
+[jira]
+site = "https://your-site.atlassian.net"
+email = "you@example.com"
+token_env = "JIRA_API_TOKEN"
+account_id = ""                         # run: tempo-log resolve me
+
+[rules]
+ticket_pattern = "[A-Z][A-Z0-9]+-[0-9]+"
+admin_ticket = ""                       # optional ticket suggested for unattributed time
+idle_gap_minutes = 15
+rounding_minutes = 30
+
+[placement]
+mode = "actual"                         # actual (real timestamps) | pack | fit (window modes)
+window = "08:00-16:00"                  # used by pack and fit only
+timezone = "UTC"
+
+[sources]
+claude_projects_dir = ""                # default: ~/.claude/projects/<encoded hub path>
+repos = "auto"                          # auto = every git repo directly under the hub + .worktrees/*/*
+git_authors = []                        # commit author emails to count; default: [jira.email]

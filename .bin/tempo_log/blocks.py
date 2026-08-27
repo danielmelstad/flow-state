@@ -1,0 +1,78 @@
+"""Cluster events into blocks per local day and ticket; derive entry candidates."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date, timedelta
+from zoneinfo import ZoneInfo
+
+from tempo_log.models import Block, Entry, Event
+
+
+def round_seconds(seconds: int, rounding_minutes: int) -> int:
+    unit = rounding_minutes * 60
+    if seconds <= 0:
+        return 0
+    rounded = ((seconds + unit // 2) // unit) * unit
+    return max(rounded, unit)
+
+
+def cluster(events: list[Event], tz: ZoneInfo, idle_gap_minutes: int) -> list[Block]:
+    gap = timedelta(minutes=idle_gap_minutes)
+    by_key: dict[tuple[date, str | None], list[Event]] = defaultdict(list)
+    for e in sorted(events, key=lambda e: e.ts):
+        by_key[(e.ts.astimezone(tz).date(), e.ticket)].append(e)
+
+    blocks: list[Block] = []
+    for (day, ticket), evs in by_key.items():
+        current: Block | None = None
+        for e in evs:
+            if current is None or e.ts - current.end > gap:
+                current = Block(day=day, ticket=ticket, start=e.ts, end=e.ts, events=0)
+                blocks.append(current)
+            current.end = e.ts
+            current.events += 1
+            current.sources[e.source] = current.sources.get(e.source, 0) + 1
+    blocks.sort(key=lambda b: (b.start, b.ticket or ""))
+    return blocks
+
+
+def _duration_seconds(block: Block) -> int:
+    """Return block duration in seconds, with a floor of 1 for any block with events."""
+    return max(1, int((block.end - block.start).total_seconds()))
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _source_labels(sources: dict[str, int], block_count: int) -> list[str]:
+    labels = []
+    if block_count and sources.get("claude"):
+        labels.append(f"claude:{_plural(block_count, 'block')}")
+    if sources.get("git"):
+        labels.append(f"git:{_plural(sources['git'], 'commit')}")
+    return labels
+
+
+def entries_for_day(blocks: list[Block], day: date, mode: str, rounding_minutes: int, tz: ZoneInfo) -> list[Entry]:
+    todays = [b for b in blocks if b.day == day]
+    entries: list[Entry] = []
+    grouped: dict[str | None, list[Block]] = defaultdict(list)
+    for b in todays:
+        grouped[b.ticket].append(b)
+    for ticket, group in grouped.items():
+        total = sum(_duration_seconds(b) for b in group)
+        sources: dict[str, int] = defaultdict(int)
+        for b in group:
+            for k, v in b.sources.items():
+                sources[k] += v
+        claude_blocks = sum(1 for b in group if b.sources.get("claude"))
+        first_activity = min(b.start for b in group)
+        start = first_activity.astimezone(tz).time().replace(second=0, microsecond=0) if mode == "actual" else None
+        entries.append(Entry(ticket=ticket or "", seconds=round_seconds(total, rounding_minutes),
+                             start=start, description="",
+                             sources=_source_labels(dict(sources), claude_blocks),
+                             first_activity=first_activity))
+    entries.sort(key=lambda e: e.first_activity)
+    return entries
