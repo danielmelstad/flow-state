@@ -37,6 +37,11 @@ def cluster(events: list[Event], tz: ZoneInfo, idle_gap_minutes: int) -> list[Bl
     return blocks
 
 
+def _duration_seconds(block: Block) -> int:
+    """Return block duration in seconds, with a floor of 1 for any block with events."""
+    return max(1, int((block.end - block.start).total_seconds()))
+
+
 def _source_labels(sources: dict[str, int], block_count: int) -> list[str]:
     labels = []
     if block_count and sources.get("claude"):
@@ -51,7 +56,7 @@ def entries_for_day(blocks: list[Block], day: date, mode: str, rounding_minutes:
     entries: list[Entry] = []
     if mode == "actual":
         for b in todays:
-            seconds = round_seconds(int((b.end - b.start).total_seconds()), rounding_minutes)
+            seconds = round_seconds(_duration_seconds(b), rounding_minutes)
             local_start = b.start.astimezone(tz).time().replace(second=0, microsecond=0)
             claude_blocks = 1 if b.sources.get("claude") else 0
             entries.append(Entry(ticket=b.ticket or "", seconds=seconds, start=local_start,
@@ -63,7 +68,7 @@ def entries_for_day(blocks: list[Block], day: date, mode: str, rounding_minutes:
     for b in todays:
         grouped[b.ticket].append(b)
     for ticket, group in grouped.items():
-        total = sum(max(1, int((b.end - b.start).total_seconds())) for b in group)
+        total = sum(_duration_seconds(b) for b in group)
         sources: dict[str, int] = defaultdict(int)
         for b in group:
             for k, v in b.sources.items():

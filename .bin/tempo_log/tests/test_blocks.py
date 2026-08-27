@@ -52,6 +52,7 @@ def test_entries_actual_mode_one_per_block(utc):
     assert [(e.ticket, e.seconds, e.start) for e in entries] == [
         ("A-1", 1800, time(9, 0)), ("A-1", 3600, time(13, 2)),
     ]
+    assert entries[0].sources == ["claude:1 blocks"]
     assert entries[1].sources == ["claude:1 blocks", "git:1 commits"]
     assert entries[0].first_activity == utc(2026, 8, 25, 9, 0)
 
@@ -73,3 +74,21 @@ def test_entries_window_mode_one_per_ticket(utc):
 def test_entries_only_for_requested_day(utc):
     blocks = cluster([ev(utc, 9, 0), Event(utc(2026, 8, 26, 9, 0), "A-1", "claude", "s")], TZ, 15)
     assert len(entries_for_day(blocks, date(2026, 8, 26), "actual", 30, TZ)) == 1
+
+
+def test_entries_actual_mode_single_event_block_gets_one_unit(utc):
+    blocks = cluster([ev(utc, 9, 0)], TZ, 15)
+    entries = entries_for_day(blocks, date(2026, 8, 25), "actual", 30, TZ)
+    assert [(e.ticket, e.seconds, e.start) for e in entries] == [
+        ("A-1", 1800, time(9, 0)),
+    ]
+
+
+def test_entries_window_mode_git_only_sources(utc):
+    blocks = cluster([
+        ev(utc, 9, 0, source="git", session=None),
+        ev(utc, 9, 10, source="git", session=None),
+    ], TZ, 15)
+    entries = entries_for_day(blocks, date(2026, 8, 25), "pack", 30, TZ)
+    assert len(entries) == 1
+    assert entries[0].sources == ["git:2 commits"]
