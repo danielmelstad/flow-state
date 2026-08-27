@@ -59,6 +59,7 @@ def _free_capacity(occupied: list[Slot], window: Window) -> int:
 
 def _fit(entries: list[Entry], capacity: int, rounding_minutes: int) -> None:
     unit = rounding_minutes * 60
+    capacity -= capacity % unit
     total = sum(e.seconds for e in entries)
     if total <= capacity:
         return
@@ -67,21 +68,24 @@ def _fit(entries: list[Entry], capacity: int, rounding_minutes: int) -> None:
             f"fit mode: free window capacity ({capacity // 60} min) is below one "
             f"{rounding_minutes}-minute unit per entry ({len(entries)} entries)"
         )
-    scale = capacity / total
     for e in entries:
         e.original_seconds = e.seconds
-        e.seconds = round_seconds(int(e.seconds * scale), rounding_minutes)
+        e.seconds = round_seconds(e.seconds * capacity // total, rounding_minutes)
     residual = capacity - sum(e.seconds for e in entries)
-    while residual != 0:
+    for _ in range(len(entries) * 4):
+        if residual == 0:
+            break
         step = unit if residual > 0 else -unit
-        target = max(entries, key=lambda e: e.seconds) if residual < 0 else max(entries, key=lambda e: e.original_seconds or 0)
+        target = max(entries, key=lambda e: e.seconds)
         if target.seconds + step < unit:
             raise PlacementError("fit mode: cannot distribute residual without dropping an entry below one unit")
         target.seconds += step
         residual -= step
+    if residual != 0:
+        raise PlacementError("fit mode: could not distribute the rounding residual")
 
 
-def _place_sequential(entries: list[Entry], occupied: list[Slot], window: Window) -> list[str]:
+def _place_sequential(entries: list[Entry], occupied: list[Slot], window: Window, mode: str) -> list[str]:
     slots = sorted((_secs(s.start), _secs(s.end)) for s in occupied)
     cursor = _secs(window.start)
     end_limit = _secs(window.end)
@@ -92,6 +96,11 @@ def _place_sequential(entries: list[Entry], occupied: list[Slot], window: Window
             if collision is None:
                 break
             cursor = collision[1]
+        if cursor + e.seconds > 86400:
+            raise PlacementError(
+                f"{e.ticket or '(unattributed)'} cannot be placed before midnight in {mode} mode; "
+                f"use --mode actual or shorten the day"
+            )
         e.start = time_from_secs(cursor)
         cursor += e.seconds
     if entries and cursor > end_limit and "window_overflow" not in warnings:
@@ -104,8 +113,4 @@ def place_window(entries: list[Entry], occupied: list[Slot], window: Window, mod
         raise PlacementError(f"place_window called with mode {mode!r}")
     if mode == "fit":
         _fit(entries, _free_capacity(occupied, window), rounding_minutes)
-    warnings = _place_sequential(entries, occupied, window)
-    if mode == "fit" and "window_overflow" in warnings:
-        # Can happen only when occupied slots sit partly outside the window; report it plainly.
-        warnings = ["window_overflow"]
-    return warnings
+    return _place_sequential(entries, occupied, window, mode)

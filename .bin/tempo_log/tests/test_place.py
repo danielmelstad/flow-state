@@ -59,7 +59,8 @@ def test_fit_scales_to_capacity_and_records_original(utc):
 def test_fit_residual_goes_to_largest(utc):
     es = [entry(utc, "A-1", 5 * 60), entry(utc, "B-2", 5 * 60), entry(utc, "C-3", 2 * 60)]  # 12h
     place_window(es, [], W, "fit", 30)
-    # scaled: 3.33h, 3.33h, 1.33h -> rounded 3.5, 3.5, 1.5 = 8.5h; largest loses 30 min
+    # scaled: 3.33h, 3.33h, 1.33h -> rounded 3.5, 3.5, 1.5 = 8.5h; the two 3.5h entries tie,
+    # so the first in list order (A-1) loses the 30 min
     assert [e.seconds for e in es] == [3 * 3600, 3 * 3600 + 1800, 3600 + 1800]
     assert sum(e.seconds for e in es) == 8 * 3600
 
@@ -80,3 +81,27 @@ def test_fit_too_little_capacity(utc):
     es = [entry(utc, "A-1", 60), entry(utc, "B-2", 60)]
     with pytest.raises(PlacementError):
         place_window(es, [Slot(time(8, 0), time(15, 30), "X")], W, "fit", 30)
+
+
+def test_fit_non_unit_aligned_capacity_terminates(utc):
+    es = [entry(utc, "A-1", 5 * 60), entry(utc, "B-2", 4 * 60)]  # 9h into a fragmented window
+    occupied = [Slot(time(12, 0), time(12, 45), "X")]
+    place_window(es, occupied, W, "fit", 30)
+    # free capacity is 7h15 (8h window minus the 45-minute slot), floored to 7h00
+    assert sum(e.seconds for e in es) == 7 * 3600
+    assert all(e.seconds % 1800 == 0 for e in es)
+    assert all(e.original_seconds is not None for e in es)
+
+
+def test_pack_past_midnight_raises(utc):
+    w = Window.parse("20:00-23:00")
+    es = [entry(utc, "A-1", 4 * 60), entry(utc, "B-2", 2 * 60), entry(utc, "C-3", 60)]
+    with pytest.raises(PlacementError, match="midnight"):
+        place_window(es, [], w, "pack", 30)
+
+
+def test_fit_fragmentation_overflow_is_warned(utc):
+    es = [entry(utc, "A-1", 7 * 60 + 30)]
+    occupied = [Slot(time(12, 0), time(12, 30), "X")]
+    assert place_window(es, occupied, W, "fit", 30) == ["window_overflow"]
+    assert es[0].start == time(12, 30)
