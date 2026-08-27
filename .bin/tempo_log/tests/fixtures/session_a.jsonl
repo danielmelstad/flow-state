@@ -1,0 +1,9 @@
+{"type":"mode","sessionId":"s1"}
+{"type":"user","timestamp":"2026-08-25T07:12:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s1","message":{"role":"user","content":"work on ADA-486"}}
+{"type":"assistant","timestamp":"2026-08-25T07:12:30.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s1","message":{"role":"assistant","content":[{"type":"text","text":"ok"},{"type":"tool_use","name":"Read","input":{"file_path":"/hub/.worktrees/ADA-486/repo/x.py"}}]}}
+{"type":"assistant","timestamp":"2026-08-25T07:13:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s1","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"git -C /hub/.worktrees/ADA-486/repo status","description":"status"}}]}}
+{"type":"user","timestamp":"2026-08-25T07:14:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","content":"clean"}]}}
+{"type":"file-history-snapshot","sessionId":"s1"}
+{"type":"user","timestamp":"2026-08-25T09:00:00.000Z","cwd":"/hub/.worktrees/WI-100/svc","gitBranch":"WI-100","sessionId":"s2","message":{"role":"user","content":"fix the test"}}
+{"type":"assistant","timestamp":"2026-08-26T10:00:00.000Z","cwd":"/hub","gitBranch":"main","sessionId":"s3","message":{"role":"assistant","content":[{"type":"text","text":"next day"}]}}
+not json at all
