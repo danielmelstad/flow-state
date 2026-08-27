@@ -1,4 +1,5 @@
 import json
+import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ import pytest
 
 from tempo_log import cli
 from tempo_log.draft import draft_path, dumps, loads
+from tempo_log.ledger import Ledger
 from tempo_log.models import Draft, Entry
 
 CONFIG = """
@@ -38,7 +40,7 @@ class ScriptedTransport:
         self.calls.append((method, url, body))
         if method == "GET" and "/rest/api/3/issue/" in url:
             key = url.rsplit("/", 1)[1].split("?")[0]
-            return 200, {"id": str(abs(hash(key)) % 100000 + 1), "fields": {"summary": f"Summary of {key}"}}
+            return 200, {"id": str(zlib.crc32(key.encode()) % 100000 + 1), "fields": {"summary": f"Summary of {key}"}}
         if method == "GET" and "/4/worklogs/user/" in url:
             return 200, {"results": [{"tempoWorklogId": 9, "startDate": "2026-08-25", "startTime": "08:00:00",
                                       "timeSpentSeconds": 1800, "issue": {"id": 1}, "description": "EXIST-1: meeting"}],
@@ -115,9 +117,31 @@ def test_scan_range_writes_one_draft_per_day(hub):
     assert draft_path(hub / ".tempo-log", date(2026, 8, 26)).exists()
 
 
+def test_scan_excludes_own_posted_worklogs(hub):
+    ledger = Ledger.load(hub / ".tempo-log" / "ledger.json")
+    ledger.record(date(2026, 8, 25), 9, "EXIST-1", 1800, "08:00")
+
+    code, _ = run(hub, "scan", "2026-08-25")
+    assert code == 0
+    draft = loads(draft_path(hub / ".tempo-log", date(2026, 8, 25)).read_text())
+    assert draft.occupied == []
+
+
+class RaisingTransport:
+    def request(self, method, url, headers, body):
+        raise AssertionError(f"unexpected call {method} {url}")
+
+
+def test_scan_offline_makes_no_http_calls(hub):
+    code, _ = run(hub, "scan", "2026-08-25", "--offline", transport=RaisingTransport())
+    assert code == 0
+    draft = loads(draft_path(hub / ".tempo-log", date(2026, 8, 25)).read_text())
+    assert draft.occupied == []
+
+
 def test_missing_token_is_a_clear_error(hub, capsys):
     code, _ = run(hub, "scan", "2026-08-25", env={})
-    assert code == 2
+    assert code == 4
     assert "TEMPO_API_TOKEN" in capsys.readouterr().err
 
 
@@ -178,6 +202,56 @@ def test_post_keep_start_refuses_overlap_in_pack(hub, capsys):
     assert code == 1
     assert "overlap" in capsys.readouterr().err
     assert not any(m == "POST" for m, _, _ in t.calls)
+
+
+def test_post_fit_refuses_when_total_exceeds_capacity(hub, capsys):
+    run(hub, "scan", "2026-08-25", "--mode", "fit")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    text = _drop_unattributed_entry(p.read_text())
+    # ADA-486 and WI-100 both start at 1800s each; bump both past the 7h30 free
+    # capacity (8h window minus the scripted 30-min occupied slot).
+    text = text.replace('ticket = "ADA-486"\nseconds = 1800', 'ticket = "ADA-486"\nseconds = 14400', 1)
+    text = text.replace('ticket = "WI-100"\nseconds = 1800', 'ticket = "WI-100"\nseconds = 14400', 1)
+    p.write_text(text)
+
+    code, t = run(hub, "post", "2026-08-25", "--dry-run")
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "fit mode" in err
+    assert not any(m == "POST" for m, _, _ in t.calls)
+
+
+def test_post_fit_within_capacity_still_dry_runs(hub, capsys):
+    run(hub, "scan", "2026-08-25", "--mode", "fit")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    p.write_text(_drop_unattributed_entry(p.read_text()))
+
+    code, t = run(hub, "post", "2026-08-25", "--dry-run")
+    assert code == 0
+    assert not any(m == "POST" for m, _, _ in t.calls)
+
+
+def test_post_keeps_edited_start_when_nudged_from_removed(hub, capsys):
+    class NoOccupiedTransport(ScriptedTransport):
+        def request(self, method, url, headers, body):
+            if method == "GET" and "/4/worklogs/user/" in url:
+                self.calls.append((method, url, body))
+                return 200, {"results": [], "metadata": {}}
+            return super().request(method, url, headers, body)
+
+    day = date(2026, 8, 25)
+    entry = Entry(ticket="ADA-486", seconds=1800, start=time(9, 30), description="ADA-486: work",
+                  sources=[], first_activity=datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc))
+    draft = Draft(day=day, mode="actual", window=None, timezone="UTC", entries=[entry], occupied=[], warnings=[])
+    p = draft_path(hub / ".tempo-log", day)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(dumps(draft))
+
+    code, t = run(hub, "post", day.isoformat(), "--dry-run", transport=NoOccupiedTransport())
+    assert code == 0
+    out = capsys.readouterr().out
+    ada_line = next(l for l in out.splitlines() if "ADA-486: work" in l and "POST" in l)
+    assert "'startTime': '09:30:00'" in ada_line
 
 
 def test_post_rewinds_to_real_start_when_collision_gone(hub, capsys):

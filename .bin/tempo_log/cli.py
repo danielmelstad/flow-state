@@ -123,7 +123,11 @@ class Services:
 def cmd_scan(args, cfg: Config, svc: Services, out: TextIO) -> int:
     mode = args.mode or cfg.placement.mode
     for day in args.days:
-        occupied = [] if args.offline else svc.occupied(day)
+        if args.offline:
+            occupied = []
+        else:
+            exclude_ids = {int(r["worklog_id"]) for r in svc.ledger.posted(day)}
+            occupied = svc.occupied(day, exclude_ids)
         describe = (lambda k: (f"{k}: {svc.ledger.issue_summary(k)}" if svc.ledger.issue_summary(k) else k)) if args.offline else svc.describe
         draft = build_draft(cfg, day, mode, occupied, describe)
         path = draft_path(cfg.state_dir, day)
@@ -183,6 +187,15 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
             draft.warnings = place.place_actual(draft.entries, occupied)
         else:
             draft.entries.sort(key=lambda e: e.first_activity)
+            if draft.mode == "fit":
+                cap = place.free_capacity(occupied, cfg.placement.window)
+                cap -= cap % (cfg.rules.rounding_minutes * 60)
+                total = sum(e.seconds for e in draft.entries)
+                if total > cap:
+                    raise DraftError(
+                        f"fit mode: reviewed total {total // 60} min exceeds the free window capacity "
+                        f"{cap // 60} min; re-run scan, shorten entries, or use --mode pack"
+                    )
             draft.warnings = place.place_window(draft.entries, occupied, cfg.placement.window, draft.mode, cfg.rules.rounding_minutes)
         warnings = validate_for_post(draft, cfg.rules.rounding_minutes)
         for w in warnings + [w for w in draft.warnings if not w.startswith("overlap")]:
@@ -248,7 +261,11 @@ def cmd_resolve(args, cfg: Config, svc: Services, out: TextIO) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tempo-log", description="Derive time from activity, review, post to Tempo.")
+    p = argparse.ArgumentParser(
+        prog="tempo-log",
+        description="Derive time from activity, review, post to Tempo.",
+        epilog="exit codes: 0 ok, 1 config/draft/placement error, 2 usage, 3 HTTP error, 4 missing token",
+    )
     p.add_argument("--config", type=Path, default=HUB_ROOT / ".tempo-log.toml")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -302,7 +319,7 @@ def main(argv: list[str] | None = None, *, transport: Transport | None = None,
         return args.func(args, cfg, svc, out)
     except TokenError as exc:
         err.write(f"error: {exc}\n")
-        return 2
+        return 4
     except (ConfigError, DraftError, place.PlacementError, ValueError) as exc:
         err.write(f"error: {exc}\n")
         return 1

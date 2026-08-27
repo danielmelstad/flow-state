@@ -42,12 +42,16 @@ def _duration_seconds(block: Block) -> int:
     return max(1, int((block.end - block.start).total_seconds()))
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _source_labels(sources: dict[str, int], block_count: int) -> list[str]:
     labels = []
     if block_count and sources.get("claude"):
-        labels.append(f"claude:{block_count} blocks")
+        labels.append(f"claude:{_plural(block_count, 'block')}")
     if sources.get("git"):
-        labels.append(f"git:{sources['git']} commits")
+        labels.append(f"git:{_plural(sources['git'], 'commit')}")
     return labels
 
 

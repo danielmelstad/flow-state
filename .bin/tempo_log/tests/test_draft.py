@@ -114,6 +114,17 @@ def test_render_table_mentions_unattributed_and_totals(utc):
     assert "2h00m" in out  # total 5400 + 1800
 
 
+def test_render_table_sorts_rows_by_start(utc):
+    d = sample(utc)
+    d.entries = [
+        Entry("A-1", 1800, time(10, 0), "later", [], utc(2026, 8, 25, 9)),
+        Entry("B-2", 1800, time(9, 30), "earlier", [], utc(2026, 8, 25, 9, 30)),
+    ]
+    d.entries[0].nudged_from = time(9, 0)
+    out = render_table(d)
+    assert out.index("B-2") < out.index("A-1")
+
+
 def test_dumps_escapes_control_characters(utc):
     d = sample(utc)
     d.entries[0].description = 'has "quote", back\\slash, new\nline, tab\tand \x7f del'

@@ -65,7 +65,7 @@ def place_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
         if cursor + e.seconds > 86400:
             if cursor != original:
                 raise PlacementError(
-                    f"{e.ticket or '(unattributed)'} cannot be placed before midnight in actual mode; "
+                    f"{e.ticket or '(unattributed)'} would end past midnight in actual mode; "
                     "shorten the day or use --mode pack"
                 )
             warnings.append(f"crosses midnight: {e.ticket or '(unattributed)'} {_fmt(e.start)}")
@@ -79,7 +79,7 @@ def place_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
     return warnings
 
 
-def _free_capacity(occupied: list[Slot], window: Window) -> int:
+def free_capacity(occupied: list[Slot], window: Window) -> int:
     w0, w1 = _secs(window.start), _secs(window.end)
     used = 0
     for slot in occupied:
@@ -129,7 +129,7 @@ def _place_sequential(entries: list[Entry], occupied: list[Slot], window: Window
             cursor = collision[1]
         if cursor + e.seconds > 86400:
             raise PlacementError(
-                f"{e.ticket or '(unattributed)'} cannot be placed before midnight in {mode} mode; "
+                f"{e.ticket or '(unattributed)'} would end past midnight in {mode} mode; "
                 f"use --mode actual or shorten the day"
             )
         e.start = time_from_secs(cursor)
@@ -143,5 +143,5 @@ def place_window(entries: list[Entry], occupied: list[Slot], window: Window, mod
     if mode not in ("pack", "fit"):
         raise PlacementError(f"place_window called with mode {mode!r}")
     if mode == "fit":
-        _fit(entries, _free_capacity(occupied, window), rounding_minutes)
+        _fit(entries, free_capacity(occupied, window), rounding_minutes)
     return _place_sequential(entries, occupied, window, mode)

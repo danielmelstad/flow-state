@@ -28,6 +28,7 @@ def dumps(draft: Draft) -> str:
     lines = [
         "# tempo-log draft. Edit ticket/seconds/description (and start in actual mode),",
         "# delete entries you do not want, then run: tempo-log post <date>",
+        "# actual mode: if you change start on an entry that has nudged_from, delete its nudged_from line so post keeps your value",
         f"date = {_q(draft.day.isoformat())}",
         f"mode = {_q(draft.mode)}",
     ]
@@ -146,7 +147,7 @@ def render_table(draft: Draft) -> str:
             rows.append(f"  {_t(s.start)}-{_t(s.end)}  {s.ticket}")
         rows.append("")
     rows.append(f"{'start':<7} {'dur':<7} {'ticket':<12} {'description':<48} sources")
-    for e in draft.entries:
+    for e in sorted(draft.entries, key=lambda e: (e.start is None, e.start or time.min)):
         ticket = e.ticket or "UNATTRIBUTED"
         start = (_t(e.start) + ("<" if e.nudged_from is not None else "")) if e.start else "--:--"
         dur = fmt_duration(e.seconds) + ("*" if e.original_seconds is not None else "")

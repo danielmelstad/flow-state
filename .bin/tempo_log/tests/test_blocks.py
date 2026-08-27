@@ -52,7 +52,7 @@ def test_entries_actual_mode_one_per_ticket_with_real_start(utc):
         ("A-1", 5400, time(9, 0)),   # 88 min rounds to 90
         ("B-2", 1800, time(11, 0)),  # single event, one-unit floor
     ]
-    assert entries[0].sources == ["claude:2 blocks", "git:1 commits"]
+    assert entries[0].sources == ["claude:2 blocks", "git:1 commit"]
     assert entries[0].first_activity == utc(2026, 8, 25, 9, 0)
 
 

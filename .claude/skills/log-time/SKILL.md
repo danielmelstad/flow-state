@@ -15,12 +15,14 @@ commits, reviewed by the user before posting. All logic lives in
   `.tempo-log.toml.example`; `tempo-log resolve me` prints the `account_id`
   line to paste into the config).
 - `TEMPO_API_TOKEN` and `JIRA_API_TOKEN` are exported in the user's shell.
-  Never read, echo, or search for token values. If a command exits 2, tell the
-  user which variable is missing and stop.
+  Never read, echo, or search for token values. If a command exits 4, tell the
+  user which variable is missing and stop. Exit 2 is a usage error: show the
+  CLI message.
 
 ## Flow
 
-1. Default date: `yesterday`; if the user says "today" or gives dates, use those.
+1. Default date: `yesterday`, or `today` if invoked after the configured
+   window end; if the user says "today" or gives dates, use those.
 2. Run `tempo-log scan <dates>` (add `--mode actual|pack|fit` only if the user
    asks for a different placement than their config default).
 3. Present each day's table verbatim, then call out explicitly:
@@ -36,7 +38,9 @@ commits, reviewed by the user before posting. All logic lives in
    Suggest the configured `admin_ticket` for unattributed time only if one is set.
 4. Apply the user's corrections by editing `.tempo-log/drafts/<date>.toml`
    (ticket, seconds, description, start in actual mode; delete or add
-   `[[entries]]`). Run `tempo-log show <date>` and present the result.
+   `[[entries]]`). In actual mode, if you change `start` on an entry that has
+   `nudged_from`, delete its `nudged_from` line so post keeps your value. Run
+   `tempo-log show <date>` and present the result.
 5. Post only after the user explicitly says to post. Run
    `tempo-log post <date>`; on "already has posted worklogs" ask whether to
    `--replace`. `post` re-runs placement from the draft: in actual mode it

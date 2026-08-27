@@ -92,6 +92,18 @@ def test_slots_from_worklogs_in_local_tz():
     assert (slots[0].start.hour, slots[0].end.hour, slots[0].ticket) == (8, 9, "ADA-470: thing")
 
 
+def test_slots_from_worklogs_skips_malformed():
+    results = [
+        {"tempoWorklogId": 1, "startDate": "2026-08-25", "startTime": "08:00:00",
+         "timeSpentSeconds": "abc", "issue": None, "description": ""},
+        {"tempoWorklogId": 2, "startDate": "2026-08-25", "startTime": "09:00:00",
+         "timeSpentSeconds": 1800, "issue": {"id": 1}, "description": "ADA-470: valid"},
+    ]
+    slots = slots_from_worklogs(results, ZoneInfo("UTC"), date(2026, 8, 25))
+    assert len(slots) == 1
+    assert slots[0].ticket == "ADA-470: valid"
+
+
 class _FakeUrlResponse:
     def __init__(self, status: int, body: bytes):
         self.status = status

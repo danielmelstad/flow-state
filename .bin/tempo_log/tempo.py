@@ -57,13 +57,13 @@ def slots_from_worklogs(results: list[dict], tz: ZoneInfo, day: date) -> list[Sl
     for w in results:
         try:
             start_dt = datetime.combine(date.fromisoformat(w["startDate"]), time.fromisoformat(w.get("startTime") or "00:00:00"))
-        except (KeyError, ValueError):
+            if start_dt.date() != day:
+                continue
+            end_dt = start_dt + timedelta(seconds=int(w.get("timeSpentSeconds", 0)))
+            end_t = end_dt.time() if end_dt.date() == day else time(23, 59, 59)
+            label = str(w.get("description") or "").strip() or f"issue {w.get('issue', {}).get('id', '?')}"
+        except (KeyError, ValueError, TypeError, AttributeError):
             continue
-        if start_dt.date() != day:
-            continue
-        end_dt = start_dt + timedelta(seconds=int(w.get("timeSpentSeconds", 0)))
-        end_t = end_dt.time() if end_dt.date() == day else time(23, 59, 59)
-        label = str(w.get("description") or "").strip() or f"issue {w.get('issue', {}).get('id', '?')}"
         slots.append(Slot(start=start_dt.time(), end=end_t, ticket=label))
     slots.sort(key=lambda s: s.start)
     return slots
