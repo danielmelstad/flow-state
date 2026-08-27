@@ -164,6 +164,22 @@ def test_post_keep_start_refuses_overlap_in_actual(hub, capsys):
     assert "'startTime': '09:30:00'" in wi_line
 
 
+def test_post_keep_start_refuses_overlap_in_pack(hub, capsys):
+    run(hub, "scan", "2026-08-25", "--mode", "pack")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    text = _drop_unattributed_entry(p.read_text())
+    # ADA-486 is packed to 08:30 (right after the 08:00-08:30 occupied slot);
+    # force it back onto the occupied slot itself to collide.
+    assert 'start = "08:30"' in text
+    text = text.replace('start = "08:30"', 'start = "08:00"', 1)
+    p.write_text(text)
+
+    code, t = run(hub, "post", "2026-08-25", "--dry-run", "--keep-start")
+    assert code == 1
+    assert "overlap" in capsys.readouterr().err
+    assert not any(m == "POST" for m, _, _ in t.calls)
+
+
 def test_post_rewinds_to_real_start_when_collision_gone(hub, capsys):
     class NoOccupiedTransport(ScriptedTransport):
         def request(self, method, url, headers, body):

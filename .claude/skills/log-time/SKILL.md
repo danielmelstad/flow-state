@@ -12,7 +12,8 @@ commits, reviewed by the user before posting. All logic lives in
 ## Preconditions
 
 - `.tempo-log.toml` exists at the hub root (else point the user at
-  `.tempo-log.toml.example`; `tempo-log resolve me` fills `account_id`).
+  `.tempo-log.toml.example`; `tempo-log resolve me` prints the `account_id`
+  line to paste into the config).
 - `TEMPO_API_TOKEN` and `JIRA_API_TOKEN` are exported in the user's shell.
   Never read, echo, or search for token values. If a command exits 2, tell the
   user which variable is missing and stop.
@@ -27,18 +28,23 @@ commits, reviewed by the user before posting. All logic lives in
    - `*` scaled entries (fit mode) with their original durations,
    - `<` marked rows (actual mode: nudged forward from their real start),
    - any `WARNING:` lines, including `nudged:` and `crosses midnight:`
-     (informational, actual mode) and `window_overflow`/`overlap`
-     (pack/fit and collision warnings).
+     (informational, actual mode) and `window_overflow` (pack/fit only).
+   A freshly scanned or shown draft never carries an `overlap:` warning: scan
+   resolves collisions itself, by nudging in actual mode and by sequential
+   placement in pack/fit. `overlap:` only appears if a later `post --keep-start`
+   finds one, and in that case the post fails (see step 5).
    Suggest the configured `admin_ticket` for unattributed time only if one is set.
 4. Apply the user's corrections by editing `.tempo-log/drafts/<date>.toml`
    (ticket, seconds, description, start in actual mode; delete or add
    `[[entries]]`). Run `tempo-log show <date>` and present the result.
 5. Post only after the user explicitly says to post. Run
    `tempo-log post <date>`; on "already has posted worklogs" ask whether to
-   `--replace`. `post` re-runs the actual-mode nudge (or window placement)
-   against the fresh occupied slots unless the user asked to keep the draft's
-   times exactly (`--keep-start`, which refuses instead of moving anything on
-   overlap). Report the posted ids and totals from the CLI output.
+   `--replace`. `post` re-runs placement from the draft: in actual mode it
+   rewinds every entry to its real start and re-nudges; in pack/fit it
+   re-places entries in the window; both run against freshly fetched occupied
+   slots. `--keep-start` keeps the draft's start times exactly as written, in
+   any mode, and refuses to post if any entry then overlaps an occupied slot
+   or another entry. Report the posted ids and totals from the CLI output.
 6. On any non-zero exit, show the CLI's stderr verbatim and stop. Do not retry
    posts. `tempo-log undo <date>` reverts what the ledger recorded.
 
