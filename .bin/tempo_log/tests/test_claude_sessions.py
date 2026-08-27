@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from tempo_log.sources.claude_sessions import parse_record, read_events

@@ -184,7 +184,7 @@ def test_post_keep_start_refuses_overlap_in_actual(hub, capsys):
     assert not any(m == "POST" for m, _, _ in t.calls)
     out = capsys.readouterr().out
     assert "nudged:" in out
-    wi_line = next(l for l in out.splitlines() if "WI-100" in l and "POST" in l)
+    wi_line = next(line for line in out.splitlines() if "WI-100" in line and "POST" in line)
     assert "'startTime': '09:30:00'" in wi_line
 
 
@@ -250,7 +250,7 @@ def test_post_keeps_edited_start_when_nudged_from_removed(hub, capsys):
     code, t = run(hub, "post", day.isoformat(), "--dry-run", transport=NoOccupiedTransport())
     assert code == 0
     out = capsys.readouterr().out
-    ada_line = next(l for l in out.splitlines() if "ADA-486: work" in l and "POST" in l)
+    ada_line = next(line for line in out.splitlines() if "ADA-486: work" in line and "POST" in line)
     assert "'startTime': '09:30:00'" in ada_line
 
 
@@ -274,7 +274,7 @@ def test_post_rewinds_to_real_start_when_collision_gone(hub, capsys):
     code, t = run(hub, "post", day.isoformat(), "--dry-run", transport=NoOccupiedTransport())
     assert code == 0
     out = capsys.readouterr().out
-    ada_line = next(l for l in out.splitlines() if "ADA-486: work" in l and "POST" in l)
+    ada_line = next(line for line in out.splitlines() if "ADA-486: work" in line and "POST" in line)
     assert "'startTime': '09:00:00'" in ada_line
 
 
@@ -311,7 +311,7 @@ def test_replace_does_not_nudge_past_own_worklogs(hub, capsys):
     code, _ = run(hub, "post", "2026-08-25", "--replace", "--dry-run", transport=t)
     assert code == 0
     out = capsys.readouterr().out
-    ada_line = next(l for l in out.splitlines() if "ADA-486: Summary of ADA-486" in l and "POST" in l)
+    ada_line = next(line for line in out.splitlines() if "ADA-486: Summary of ADA-486" in line and "POST" in line)
     assert "'startTime': '07:12:00'" in ada_line
 
 
