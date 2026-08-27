@@ -68,3 +68,15 @@ def test_explicit_repos_and_authors(tmp_path):
 def test_bad_ticket_pattern(tmp_path):
     with pytest.raises(ConfigError, match="ticket_pattern"):
         load_config(write(tmp_path, MINIMAL + '[rules]\nticket_pattern = "["\n'))
+
+
+def test_bad_timezone(tmp_path):
+    with pytest.raises(ConfigError, match="placement.timezone"):
+        load_config(write(tmp_path, MINIMAL + '[placement]\ntimezone = "../x"\n'))
+    with pytest.raises(ConfigError, match="placement.timezone"):
+        load_config(write(tmp_path, MINIMAL + '[placement]\ntimezone = "Nowhere/Land"\n'))
+
+
+def test_missing_config_file(tmp_path):
+    with pytest.raises(ConfigError, match="not found"):
+        load_config(tmp_path / "absent.toml")

@@ -135,8 +135,8 @@ def load_config(path: Path) -> Config:
     tz_name = str(p.get("timezone", "UTC"))
     try:
         tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError as exc:
-        raise ConfigError(f"placement.timezone unknown: {tz_name}") from exc
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ConfigError(f"placement.timezone unknown or malformed: {tz_name}") from exc
     placement = PlacementConfig(mode=mode, window=window, timezone=tz)
 
     s = data.get("sources", {})
