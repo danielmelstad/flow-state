@@ -83,7 +83,8 @@ def test_scan_writes_draft_with_occupied_and_entries(hub, capsys):
     assert draft.mode == "actual"
     assert [s.ticket for s in draft.occupied] == ["EXIST-1: meeting"]
     tickets = [e.ticket for e in draft.entries]
-    assert "ADA-486" in tickets and "WI-100" in tickets and "" in tickets  # s9 entry is unattributed
+    assert tickets == ["ADA-486", "WI-100", ""]  # one entry per ticket, first-activity order; s9 is unattributed
+    assert not any(w.startswith("overlap") for w in draft.warnings)
     ada = next(e for e in draft.entries if e.ticket == "ADA-486")
     assert ada.description == "ADA-486: Summary of ADA-486"
     assert ada.start is not None
@@ -136,6 +137,24 @@ def test_dry_run_posts_nothing_on_valid_draft(hub, capsys):
     ledger_path = hub / ".tempo-log" / "ledger.json"
     posted = json.loads(ledger_path.read_text())["posted"] if ledger_path.exists() else {}
     assert "2026-08-25" not in posted
+
+
+def test_post_keep_start_refuses_overlap_in_actual(hub, capsys):
+    run(hub, "scan", "2026-08-25")
+    p = draft_path(hub / ".tempo-log", date(2026, 8, 25))
+    # ADA-486 real start is 07:12; force it onto WI-100's 09:00 start to collide.
+    text = p.read_text().replace('start = "07:12"', 'start = "09:00"', 1)
+    p.write_text(text)
+
+    code, t = run(hub, "post", "2026-08-25", "--dry-run", "--keep-start")
+    assert code == 1
+    assert "overlap" in capsys.readouterr().err
+    assert not any(m == "POST" for m, _, _ in t.calls)
+
+    p.write_text(_drop_unattributed_entry(text))
+    code, t = run(hub, "post", "2026-08-25", "--dry-run")
+    assert code == 0
+    assert not any(m == "POST" for m, _, _ in t.calls)
 
 
 def test_post_then_refuse_then_replace_then_undo(hub, capsys):

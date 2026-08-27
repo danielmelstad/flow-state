@@ -48,6 +48,33 @@ def check_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
     return warnings
 
 
+def place_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
+    for e in entries:
+        if e.start is None:
+            raise PlacementError(f"entry {e.ticket or '(unattributed)'} has no start time")
+    taken = [(_secs(s.start), _secs(s.end)) for s in occupied]
+    warnings: list[str] = []
+    for e in sorted(entries, key=lambda e: (_secs(e.start), e.first_activity)):
+        original = _secs(e.start)
+        cursor = original
+        while True:
+            hit = next((t for t in taken if _overlaps(cursor, cursor + e.seconds, t[0], t[1])), None)
+            if hit is None:
+                break
+            cursor = hit[1]
+        if cursor + e.seconds > 86400:
+            raise PlacementError(
+                f"{e.ticket or '(unattributed)'} cannot be placed before midnight in actual mode; "
+                "shorten the day or use --mode pack"
+            )
+        if cursor != original:
+            e.nudged_from = e.start
+            e.start = time_from_secs(cursor)
+            warnings.append(f"nudged: {e.ticket or '(unattributed)'} {_fmt(e.nudged_from)} -> {_fmt(e.start)}")
+        taken.append((cursor, cursor + e.seconds))
+    return warnings
+
+
 def _free_capacity(occupied: list[Slot], window: Window) -> int:
     w0, w1 = _secs(window.start), _secs(window.end)
     used = 0

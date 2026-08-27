@@ -49,6 +49,7 @@ class Entry:
     sources: list[str]
     first_activity: datetime  # UTC
     original_seconds: int | None = None  # set by fit when scaled
+    nudged_from: time | None = None  # set by place_actual when the real start collided
 
 
 @dataclass(frozen=True)

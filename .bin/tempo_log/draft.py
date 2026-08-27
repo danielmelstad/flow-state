@@ -48,6 +48,8 @@ def dumps(draft: Draft) -> str:
         lines.append("sources = [" + ", ".join(_q(s) for s in e.sources) + "]")
         if e.original_seconds is not None:
             lines.append(f"original_seconds = {e.original_seconds}")
+        if e.nudged_from is not None:
+            lines.append(f"nudged_from = {_q(_t(e.nudged_from))}")
         lines.append(f"first_activity = {_q(e.first_activity.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))}")
     return "\n".join(lines) + "\n"
 
@@ -95,6 +97,7 @@ def loads(text: str) -> Draft:
             description=str(raw.get("description", "")), sources=[str(s) for s in raw.get("sources", [])],
             first_activity=first,
             original_seconds=int(raw["original_seconds"]) if raw.get("original_seconds") is not None else None,
+            nudged_from=_time(raw["nudged_from"], where) if raw.get("nudged_from") else None,
         ))
     raw_occupied = data.get("occupied", [])
     if not isinstance(raw_occupied, list) or not all(isinstance(o, dict) for o in raw_occupied):
@@ -142,15 +145,20 @@ def render_table(draft: Draft) -> str:
         for s in draft.occupied:
             rows.append(f"  {_t(s.start)}-{_t(s.end)}  {s.ticket}")
         rows.append("")
-    rows.append(f"{'start':<6} {'dur':<7} {'ticket':<12} {'description':<48} sources")
+    rows.append(f"{'start':<7} {'dur':<7} {'ticket':<12} {'description':<48} sources")
     for e in draft.entries:
         ticket = e.ticket or "UNATTRIBUTED"
-        start = _t(e.start) if e.start else "--:--"
+        start = (_t(e.start) + ("<" if e.nudged_from is not None else "")) if e.start else "--:--"
         dur = fmt_duration(e.seconds) + ("*" if e.original_seconds is not None else "")
-        rows.append(f"{start:<6} {dur:<7} {ticket:<12} {e.description[:48]:<48} {', '.join(e.sources)}")
+        rows.append(f"{start:<7} {dur:<7} {ticket:<12} {e.description[:48]:<48} {', '.join(e.sources)}")
     total = sum(e.seconds for e in draft.entries)
     rows.append("")
-    rows.append(f"total {fmt_duration(total)}" + ("  (* scaled by fit)" if any(e.original_seconds is not None for e in draft.entries) else ""))
+    legend = []
+    if any(e.original_seconds is not None for e in draft.entries):
+        legend.append("* scaled by fit")
+    if any(e.nudged_from is not None for e in draft.entries):
+        legend.append("< nudged forward from real start")
+    rows.append(f"total {fmt_duration(total)}" + (f"  ({', '.join(legend)})" if legend else ""))
     for w in draft.warnings:
         rows.append(f"WARNING: {w}")
     return "\n".join(rows)

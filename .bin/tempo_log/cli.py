@@ -61,7 +61,7 @@ def build_draft(cfg: Config, day: date, mode: str, occupied: list[Slot],
     for e in entries:
         e.description = describe(e.ticket) if e.ticket else ""
     if mode == "actual":
-        warnings = place.check_actual(entries, occupied)
+        warnings = place.place_actual(entries, occupied)
         window = None
     else:
         warnings = place.place_window(entries, occupied, cfg.placement.window, mode, cfg.rules.rounding_minutes)
@@ -167,7 +167,12 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
         occupied = svc.occupied(day)
         draft.occupied = occupied
         if draft.mode == "actual":
-            draft.warnings = place.check_actual(draft.entries, occupied)
+            if args.keep_start:
+                draft.warnings = place.check_actual(draft.entries, occupied)
+            else:
+                for e in draft.entries:
+                    e.nudged_from = None
+                draft.warnings = place.place_actual(draft.entries, occupied)
         elif not args.keep_start:
             draft.entries.sort(key=lambda e: e.first_activity)
             draft.warnings = place.place_window(draft.entries, occupied, cfg.placement.window, draft.mode, cfg.rules.rounding_minutes)
@@ -258,7 +263,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("days")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--replace", action="store_true", help="delete previously posted worklogs for the day first")
-    s.add_argument("--keep-start", action="store_true", help="pack/fit: keep start times from the draft")
+    s.add_argument("--keep-start", action="store_true",
+                    help="keep start times from the draft (actual: refuse on overlap; pack/fit: skip re-placement)")
     s.set_defaults(func=cmd_post)
 
     s = sub.add_parser("undo", help="delete worklogs the ledger recorded for a day")

@@ -40,6 +40,16 @@ def test_roundtrip_window_mode_with_original_seconds(utc):
     assert back.warnings == ["window_overflow"]
 
 
+def test_roundtrip_nudged_from(utc):
+    d = sample(utc)
+    d.entries[0].nudged_from = time(8, 30)
+    back = loads(dumps(d))
+    assert back.entries[0].nudged_from == time(8, 30)
+    out = render_table(back)
+    assert "<" in out
+    assert "nudged forward" in out
+
+
 def test_loads_accepts_user_edits_and_omissions():
     text = """
 date = "2026-08-25"

@@ -40,20 +40,19 @@ def test_cluster_buckets_by_local_day(utc):
     assert blocks[0].day == date(2026, 8, 26)
 
 
-def test_entries_actual_mode_one_per_block(utc):
+def test_entries_actual_mode_one_per_ticket_with_real_start(utc):
     blocks = cluster([
-        # block 1: 09:00-09:40 (40 min) -> 30 min after rounding
-        ev(utc, 9, 0), ev(utc, 9, 10), ev(utc, 9, 20), ev(utc, 9, 30), ev(utc, 9, 40),
-        # block 2: 13:02-13:50 (48 min) -> 60 min; starts with a commit
+        ev(utc, 9, 0), ev(utc, 9, 10), ev(utc, 9, 20), ev(utc, 9, 30), ev(utc, 9, 40),   # 40 min
         ev(utc, 13, 2, source="git", session=None), ev(utc, 13, 14), ev(utc, 13, 26),
-        ev(utc, 13, 38), ev(utc, 13, 50),
+        ev(utc, 13, 38), ev(utc, 13, 50),                                                 # 48 min
+        ev(utc, 11, 0, ticket="B-2"),
     ], TZ, 15)
     entries = entries_for_day(blocks, date(2026, 8, 25), "actual", 30, TZ)
     assert [(e.ticket, e.seconds, e.start) for e in entries] == [
-        ("A-1", 1800, time(9, 0)), ("A-1", 3600, time(13, 2)),
+        ("A-1", 5400, time(9, 0)),   # 88 min rounds to 90
+        ("B-2", 1800, time(11, 0)),  # single event, one-unit floor
     ]
-    assert entries[0].sources == ["claude:1 blocks"]
-    assert entries[1].sources == ["claude:1 blocks", "git:1 commits"]
+    assert entries[0].sources == ["claude:2 blocks", "git:1 commits"]
     assert entries[0].first_activity == utc(2026, 8, 25, 9, 0)
 
 
@@ -74,14 +73,6 @@ def test_entries_window_mode_one_per_ticket(utc):
 def test_entries_only_for_requested_day(utc):
     blocks = cluster([ev(utc, 9, 0), Event(utc(2026, 8, 26, 9, 0), "A-1", "claude", "s")], TZ, 15)
     assert len(entries_for_day(blocks, date(2026, 8, 26), "actual", 30, TZ)) == 1
-
-
-def test_entries_actual_mode_single_event_block_gets_one_unit(utc):
-    blocks = cluster([ev(utc, 9, 0)], TZ, 15)
-    entries = entries_for_day(blocks, date(2026, 8, 25), "actual", 30, TZ)
-    assert [(e.ticket, e.seconds, e.start) for e in entries] == [
-        ("A-1", 1800, time(9, 0)),
-    ]
 
 
 def test_entries_window_mode_git_only_sources(utc):

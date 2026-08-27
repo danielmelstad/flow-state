@@ -3,7 +3,7 @@ from datetime import time
 import pytest
 
 from tempo_log.models import Entry, Slot, Window
-from tempo_log.place import PlacementError, check_actual, place_window
+from tempo_log.place import PlacementError, check_actual, place_actual, place_window
 
 W = Window.parse("08:00-16:00")
 
@@ -24,6 +24,36 @@ def test_actual_overlap_with_occupied_and_neighbour(utc):
     assert "overlap: A-1 09:30 with occupied B-2 10:00-11:00" in warnings
     assert "overlap: A-1 09:30 with A-1 10:00" in warnings
     assert "overlap: A-1 10:00 with occupied B-2 10:00-11:00" in warnings
+
+
+def test_place_actual_no_overlap_keeps_starts(utc):
+    es = [entry(utc, "A-1", 30, time(9, 0)), entry(utc, "B-2", 30, time(10, 0))]
+    assert place_actual(es, [Slot(time(11, 0), time(12, 0), "X")]) == []
+    assert [e.start for e in es] == [time(9, 0), time(10, 0)]
+    assert all(e.nudged_from is None for e in es)
+
+
+def test_place_actual_nudges_past_occupied_and_earlier_entries(utc):
+    es = [entry(utc, "A-1", 60, time(9, 30)), entry(utc, "B-2", 30, time(10, 0))]
+    warnings = place_actual(es, [Slot(time(10, 0), time(11, 0), "X")])
+    # A-1 09:30-10:30 collides with X 10:00-11:00 -> 11:00-12:00
+    # B-2 10:00 collides with X -> 11:00, then with A-1 11:00-12:00 -> 12:00
+    assert [e.start for e in es] == [time(11, 0), time(12, 0)]
+    assert [e.nudged_from for e in es] == [time(9, 30), time(10, 0)]
+    assert warnings == ["nudged: A-1 09:30 -> 11:00", "nudged: B-2 10:00 -> 12:00"]
+
+
+def test_place_actual_processes_in_start_order(utc):
+    es = [entry(utc, "B-2", 30, time(10, 0)), entry(utc, "A-1", 60, time(9, 45))]
+    place_actual(es, [])
+    # A-1 09:45-10:45 placed first; B-2 10:00 nudged to 10:45
+    assert next(e for e in es if e.ticket == "B-2").start == time(10, 45)
+
+
+def test_place_actual_past_midnight_raises(utc):
+    es = [entry(utc, "A-1", 120, time(23, 0))]
+    with pytest.raises(PlacementError, match="midnight"):
+        place_actual(es, [Slot(time(23, 0), time(23, 30), "X")])
 
 
 def test_pack_sequential_from_window_start(utc):

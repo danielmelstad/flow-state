@@ -54,16 +54,6 @@ def _source_labels(sources: dict[str, int], block_count: int) -> list[str]:
 def entries_for_day(blocks: list[Block], day: date, mode: str, rounding_minutes: int, tz: ZoneInfo) -> list[Entry]:
     todays = [b for b in blocks if b.day == day]
     entries: list[Entry] = []
-    if mode == "actual":
-        for b in todays:
-            seconds = round_seconds(_duration_seconds(b), rounding_minutes)
-            local_start = b.start.astimezone(tz).time().replace(second=0, microsecond=0)
-            claude_blocks = 1 if b.sources.get("claude") else 0
-            entries.append(Entry(ticket=b.ticket or "", seconds=seconds, start=local_start,
-                                 description="", sources=_source_labels(b.sources, claude_blocks),
-                                 first_activity=b.start))
-        return entries
-
     grouped: dict[str | None, list[Block]] = defaultdict(list)
     for b in todays:
         grouped[b.ticket].append(b)
@@ -74,9 +64,11 @@ def entries_for_day(blocks: list[Block], day: date, mode: str, rounding_minutes:
             for k, v in b.sources.items():
                 sources[k] += v
         claude_blocks = sum(1 for b in group if b.sources.get("claude"))
+        first_activity = min(b.start for b in group)
+        start = first_activity.astimezone(tz).time().replace(second=0, microsecond=0) if mode == "actual" else None
         entries.append(Entry(ticket=ticket or "", seconds=round_seconds(total, rounding_minutes),
-                             start=None, description="",
+                             start=start, description="",
                              sources=_source_labels(dict(sources), claude_blocks),
-                             first_activity=min(b.start for b in group)))
+                             first_activity=first_activity))
     entries.sort(key=lambda e: e.first_activity)
     return entries
