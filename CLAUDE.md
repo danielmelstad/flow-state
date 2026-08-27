@@ -143,6 +143,16 @@ the cache together.
 | `task-prs` | Create PRs across repos (requires `gh`) | `task-prs TASK-123` |
 | `task-pr-status` | Check PR status across repos (requires `gh`) | `task-pr-status TASK-123` |
 | `task-clean` | Remove worktrees for tasks | `task-clean TASK-123` or `task-clean --list` |
+| `tempo-log` | Derive time from activity, review draft, post to Tempo (see `/log-time`) | `tempo-log scan yesterday`, `tempo-log post 2026-08-25` |
+
+## Time logging
+
+`/log-time [date]` drives `.bin/tempo-log`: it scans Claude Code session logs
+and ticket-prefixed commits, writes a reviewable draft under
+`.tempo-log/drafts/`, and posts to Tempo only on explicit instruction. Config
+lives in the untracked `.tempo-log.toml` (template: `.tempo-log.toml.example`);
+tokens come from `TEMPO_API_TOKEN` and `JIRA_API_TOKEN`. Tests:
+`.venv-tempo-log/bin/python -m pytest` from the hub root.
 
 ## Commit Convention
 

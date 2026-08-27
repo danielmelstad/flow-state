@@ -1,0 +1,50 @@
+---
+name: log-time
+description: Use when the user asks to log time, fill Tempo, record hours, or invokes /log-time. Drives the tempo-log CLI (scan, review, post) for a date or range; never posts without an explicit instruction.
+---
+
+# /log-time [DATE | FROM..TO | today | yesterday]
+
+Log Tempo time derived from Claude Code sessions and ticket-prefixed git
+commits, reviewed by the user before posting. All logic lives in
+`.bin/tempo-log`; this skill only drives it.
+
+## Preconditions
+
+- `.tempo-log.toml` exists at the hub root (else point the user at
+  `.tempo-log.toml.example`; `tempo-log resolve me` fills `account_id`).
+- `TEMPO_API_TOKEN` and `JIRA_API_TOKEN` are exported in the user's shell.
+  Never read, echo, or search for token values. If a command exits 2, tell the
+  user which variable is missing and stop.
+
+## Flow
+
+1. Default date: `yesterday`; if the user says "today" or gives dates, use those.
+2. Run `tempo-log scan <dates>` (add `--mode actual|pack|fit` only if the user
+   asks for a different placement than their config default).
+3. Present each day's table verbatim, then call out explicitly:
+   - entries marked `UNATTRIBUTED` (must be assigned or deleted),
+   - `*` scaled entries (fit mode) with their original durations,
+   - `<` marked rows (actual mode: nudged forward from their real start),
+   - any `WARNING:` lines, including `nudged:` and `crosses midnight:`
+     (informational, actual mode) and `window_overflow`/`overlap`
+     (pack/fit and collision warnings).
+   Suggest the configured `admin_ticket` for unattributed time only if one is set.
+4. Apply the user's corrections by editing `.tempo-log/drafts/<date>.toml`
+   (ticket, seconds, description, start in actual mode; delete or add
+   `[[entries]]`). Run `tempo-log show <date>` and present the result.
+5. Post only after the user explicitly says to post. Run
+   `tempo-log post <date>`; on "already has posted worklogs" ask whether to
+   `--replace`. `post` re-runs the actual-mode nudge (or window placement)
+   against the fresh occupied slots unless the user asked to keep the draft's
+   times exactly (`--keep-start`, which refuses instead of moving anything on
+   overlap). Report the posted ids and totals from the CLI output.
+6. On any non-zero exit, show the CLI's stderr verbatim and stop. Do not retry
+   posts. `tempo-log undo <date>` reverts what the ledger recorded.
+
+## Rules
+
+- No time logic in this skill; if the numbers look wrong, fix the CLI, not the draft.
+- Never edit `[[occupied]]` blocks; they mirror Tempo.
+- `yesterday`/`today` follow `placement.timezone` from the user's config, not
+  UTC; near midnight, confirm the intended date or pass an explicit one.
