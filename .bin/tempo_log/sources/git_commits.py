@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from tempo_log.models import RawEvent
 
 _SEP = "\x1f"
+_SINCE_MARGIN = timedelta(days=30)
 
 
 def discover_repos(hub_root: Path) -> list[Path]:
@@ -37,7 +38,7 @@ def read_events(repos: list[Path], authors: list[str], start: datetime, end: dat
             continue
         cmd = [
             "git", "-C", str(repo), "log", "--all", "--no-merges",
-            f"--since={start.isoformat()}",
+            f"--since={(start - _SINCE_MARGIN).isoformat()}",
             f"--format=%H{_SEP}%aI{_SEP}%ae{_SEP}%s",
         ]
         try:

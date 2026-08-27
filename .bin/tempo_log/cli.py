@@ -188,8 +188,7 @@ def cmd_post(args, cfg: Config, svc: Services, out: TextIO) -> int:
         else:
             draft.entries.sort(key=lambda e: e.first_activity)
             if draft.mode == "fit":
-                cap = place.free_capacity(occupied, cfg.placement.window)
-                cap -= cap % (cfg.rules.rounding_minutes * 60)
+                cap = place.floor_to_unit(place.free_capacity(occupied, cfg.placement.window), cfg.rules.rounding_minutes)
                 total = sum(e.seconds for e in draft.entries)
                 if total > cap:
                     raise DraftError(

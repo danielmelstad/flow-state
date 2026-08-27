@@ -79,6 +79,11 @@ def place_actual(entries: list[Entry], occupied: list[Slot]) -> list[str]:
     return warnings
 
 
+def floor_to_unit(seconds: int, rounding_minutes: int) -> int:
+    unit = rounding_minutes * 60
+    return seconds - seconds % unit
+
+
 def free_capacity(occupied: list[Slot], window: Window) -> int:
     w0, w1 = _secs(window.start), _secs(window.end)
     used = 0
@@ -90,7 +95,7 @@ def free_capacity(occupied: list[Slot], window: Window) -> int:
 
 def _fit(entries: list[Entry], capacity: int, rounding_minutes: int) -> None:
     unit = rounding_minutes * 60
-    capacity -= capacity % unit
+    capacity = floor_to_unit(capacity, rounding_minutes)
     total = sum(e.seconds for e in entries)
     if total <= capacity:
         return

@@ -66,6 +66,18 @@ def test_author_date_inside_window_counts_even_if_committed_later(tmp_path, utc)
     assert events[0].ts == utc(2026, 8, 25, 10)
 
 
+def test_author_date_inside_window_counts_even_if_committed_earlier(tmp_path, utc):
+    repo = tmp_path / "r"
+    make_repo(repo, [
+        ("2026-08-25T10:00:00+00:00", "me@x", "ADA-1: late author date",
+         "2026-08-01T10:00:00+00:00"),
+    ])
+    events = read_events([repo], ["me@x"], utc(2026, 8, 25), utc(2026, 8, 26))
+    assert len(events) == 1
+    assert events[0].text == "ADA-1: late author date"
+    assert events[0].ts == utc(2026, 8, 25, 10)
+
+
 def test_same_commit_in_repo_and_worktree_counted_once(tmp_path, utc):
     repo = tmp_path / "repo"
     make_repo(repo, [("2026-08-25T10:00:00+00:00", "me@x", "ADA-1: shared")])
