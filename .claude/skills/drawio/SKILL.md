@@ -233,11 +233,10 @@ A `.drawio` file is native mxGraphModel XML. Always generate XML directly — Me
 Every diagram must have this structure:
 
 ```xml
-<mxGraphModel adaptiveColors="auto">
+<mxGraphModel background="#FFFFFF" adaptiveColors="auto">
   <root>
     <mxCell id="0"/>
     <mxCell id="1" parent="0"/>
-    <!-- Diagram cells go here with parent="1" -->
   </root>
 </mxGraphModel>
 ```
@@ -245,6 +244,63 @@ Every diagram must have this structure:
 - Cell `id="0"` is the root layer
 - Cell `id="1"` is the default parent layer
 - All diagram elements use `parent="1"` unless using multiple layers
+- Diagram cells go here, with `parent="1"`. Do not write that as an XML comment:
+  comments are forbidden (see [XML well-formedness](#critical-xml-well-formedness))
+
+### Page background, and what export actually renders
+
+**Always set `background` explicitly.** Left unset, the page is transparent, and
+the editor canvas colour you see is a UI theme that is *not* stored in the file,
+so it never survives an export. The result is that what the author sees and what
+they export are different pictures. Pinning `background` makes the two agree.
+
+**Export renders light mode.** That has a consequence worth understanding before
+choosing colours:
+
+| The diagram should be | Do this |
+|---|---|
+| Light, everywhere | `background="#FFFFFF"`, light fills, dark fonts. Keep `adaptiveColors="auto"` only if a dark *editor* view matters more than a predictable export. |
+| Dark in the exported image | Commit the palette to dark: `background="#1E1E1E"` (or similar), dark fills, light fonts, and **drop `adaptiveColors="auto"`**. |
+| Correct in both editor themes, light on export | `background="#FFFFFF"` plus `light-dark(lightColor,darkColor)` per style. |
+
+`adaptiveColors="auto"` and `light-dark()` both switch on the *viewer's* theme,
+and export is always the light branch. So neither can produce a dark exported
+image — a dark export needs a genuinely dark palette. Conversely, a pinned dark
+`background` combined with adaptive or `light-dark()` fills exports light boxes
+on a dark ground, which is broken. Pick one row of that table and be consistent.
+
+On a dark page also set **`labelBackgroundColor`** to the page colour on every
+edge that carries a label: draw.io punches edge labels out of their line with a
+default light background, which shows up as pale strips.
+
+Two colour rules that follow from pinning a background:
+
+- Give every cell that has a `value` an explicit `fontColor`. An unset one
+  renders black, which disappears on a dark page.
+- No fill may match the page colour, or within a couple of percent of it. A
+  container at `#FAFAFA` on a white page is invisible except for its border.
+
+### Text only wraps if you ask it to
+
+**Every cell with prose in it needs `whiteSpace=wrap` in its style**, including
+`text;` shapes:
+
+```
+style="text;whiteSpace=wrap;html=1;align=left;verticalAlign=top;"
+```
+
+Without it a shape renders its label as a single unwrapped line that runs past
+its own geometry, off the page, and is clipped on export. The `rounded=0;whiteSpace=wrap;html=1;`
+prefix used for boxes already covers it; bare `text;` styles are the ones that
+get missed, and a long paragraph is exactly where it hurts most.
+
+Two related traps in `html=1` labels, which is all of them:
+
+- A literal `<` or `>` in label text must be written `&amp;lt;` / `&amp;gt;`, not
+  `&lt;` / `&gt;`. `&lt;env&gt;` reaches the renderer as `<env>`, which the HTML
+  label parser treats as an unknown tag and **renders as nothing** — so
+  placeholder names silently vanish. Double-escaping is correct here.
+- Line breaks inside a label are `&#10;`.
 
 ## XML reference
 
@@ -258,6 +314,10 @@ https://raw.githubusercontent.com/jgraph/drawio-mcp/main/shared/xml-reference.md
 | draw.io CLI not found | Desktop app not installed or not on PATH | Keep the `.drawio` file and tell the user to install the draw.io desktop app, use `url` mode instead, or open the file manually |
 | Export produces empty/corrupt file | Invalid XML (e.g. double hyphens in comments, unescaped special characters) | Validate XML well-formedness before writing; see the XML well-formedness section below |
 | Diagram opens but looks blank | Missing root cells `id="0"` and `id="1"` | Ensure the basic mxGraphModel structure is complete |
+| Text runs off the page, or is clipped in the export | The cell's style has no `whiteSpace=wrap` | Add `whiteSpace=wrap` to every cell with a label, `text;` shapes included |
+| Background is white on export but not in the editor | No `background` on `mxGraphModel`; the editor canvas colour is a UI theme and is not in the file | Set `background` explicitly, and pick a palette to match (see [Page background](#page-background-and-what-export-actually-renders)) |
+| A placeholder like `<env>` renders as nothing | Written `&lt;env&gt;`, so the `html=1` label parser sees `<env>` and drops it as an unknown tag | Write `&amp;lt;env&amp;gt;` |
+| Pale strips behind edge labels on a dark page | draw.io's default light edge-label background | Set `labelBackgroundColor` to the page colour on every labelled edge |
 | Edges not rendering | Edge mxCell is self-closing (no child mxGeometry element) | Every edge must have `<mxGeometry relative="1" as="geometry" />` as a child element |
 | File won't open after export | Incorrect file path or missing file association | Print the absolute file path so the user can open it manually |
 | Browser opens with empty diagram in `url` mode | `cmd.exe` stripped the `#create=...` fragment | Use the `.url` temp-file workaround on Windows/WSL2 (see [Opening the URL](#opening-the-url)) — never pass the URL directly to `cmd.exe /c start` |
