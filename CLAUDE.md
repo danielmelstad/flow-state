@@ -156,6 +156,7 @@ TASK-124: Update chart values for new pipeline
 
 | Agent | Use Case | Invocation |
 |-------|----------|------------|
+| `planner` | Implementation plans before coding (runs on Fable, cross-repo aware) | "Use planner on TASK-123" |
 | `code-reviewer` | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
 | `security-reviewer` | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
 | `test-writer` | Writing unit/integration tests | "Use test-writer for repo-b" |
