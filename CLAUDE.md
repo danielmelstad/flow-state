@@ -164,6 +164,15 @@ TASK-124: Update chart values for new pipeline
 | `refactorer` | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
 | `documentation-writer` | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
 
+**Plan mode uses `planner`, not the generic planning agent.** Before writing a
+plan file for any non-trivial or multi-repo task, dispatch the `planner` agent
+(which runs on Fable) on the ticket and reconcile its plan into the final one.
+The harness's own plan-mode workflow suggests the generic `Explore` and `Plan`
+agent types; those do not substitute for `planner`, which is cross-repo aware,
+reads the task manifest and the tracker, and knows the workspace rules
+(ticket-prefixed commits, the no-mistakes gate, `/finish-task`). Skip it only
+for genuinely trivial work: a typo, a one-line change, a rename.
+
 Agents can be chained:
 ```
 "First use code-reviewer on TASK-123, then use security-reviewer on repo-a"
