@@ -2,18 +2,18 @@
 set -euo pipefail
 
 # task-clean — Remove worktrees for tasks
-# Usage: task-clean <TICKET-ID> | --completed | --stale | --list
+# Usage: task-clean <TICKET-ID>... | --completed | --stale | --list
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/task-lib"
 
 usage() {
-    echo "Usage: task-clean <TICKET-ID> | --completed | --stale | --list"
+    echo "Usage: task-clean <TICKET-ID>... | --completed | --stale | --list"
     echo ""
     echo "Remove worktrees for tasks."
     echo ""
     echo "Modes:"
-    echo "  <TICKET-ID>    Remove worktrees for one task (guards against dirty state)"
+    echo "  <TICKET-ID>... Remove worktrees for one or more tasks (guards against dirty state)"
     echo "  --completed    Remove worktrees for all completed tasks"
     echo "  --stale        Remove worktrees with no corresponding manifest"
     echo "  --list         Show disk usage per task (no changes)"
@@ -25,7 +25,7 @@ usage() {
 }
 
 MODE=""
-TICKET=""
+TICKETS=()
 FORCE=false
 
 while [[ $# -gt 0 ]]; do
@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             MODE="single"
-            TICKET="$1"
+            TICKETS+=("$1")
             shift
             ;;
     esac
@@ -100,9 +100,22 @@ clean_ticket() {
 
 case "$MODE" in
     single)
-        echo -e "${BOLD}Cleaning worktrees for $TICKET...${NC}"
+        echo -e "${BOLD}Cleaning worktrees for ${TICKETS[*]}...${NC}"
         echo ""
-        clean_ticket "$TICKET"
+        cleaned=0
+        errors=0
+        for ticket in "${TICKETS[@]}"; do
+            if clean_ticket "$ticket"; then
+                cleaned=$((cleaned + 1))
+            else
+                errors=$((errors + 1))
+            fi
+        done
+        if [[ ${#TICKETS[@]} -gt 1 ]]; then
+            echo ""
+            echo "Cleaned: $cleaned, Errors: $errors"
+        fi
+        [[ $errors -eq 0 ]] || exit 1
         ;;
 
     completed)
@@ -117,7 +130,11 @@ case "$MODE" in
             if [[ -f "$manifest" ]]; then
                 status=$(yaml_value "$manifest" "status")
                 if [[ "$status" == "completed" ]]; then
-                    clean_ticket "$ticket" && ((cleaned++)) || ((errors++)) || true
+                    if clean_ticket "$ticket"; then
+                        cleaned=$((cleaned + 1))
+                    else
+                        errors=$((errors + 1))
+                    fi
                 fi
             fi
         done
@@ -136,7 +153,11 @@ case "$MODE" in
             manifest="$TASKS_DIR/$ticket.yaml"
             if [[ ! -f "$manifest" ]]; then
                 echo -e "  $ticket: ${YELLOW}no manifest found${NC}"
-                clean_ticket "$ticket" && ((cleaned++)) || ((errors++)) || true
+                if clean_ticket "$ticket"; then
+                    cleaned=$((cleaned + 1))
+                else
+                    errors=$((errors + 1))
+                fi
             fi
         done
         if [[ $cleaned -eq 0 && $errors -eq 0 ]]; then
