@@ -3,7 +3,13 @@
     "superpowers@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
     "atlassian@claude-plugins-official": true,
-    "context7@claude-plugins-official": true
+    "context7@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Skill(coderabbit:autofix)"
+    ]
   },
   "hooks": {
     "SessionStart": [

@@ -39,6 +39,9 @@ task-start TASK-124 repo-a repo-b
 #   -> posts PR links as a tracker comment; sets local status cache to in-review; worktrees are kept
 /finish-task TASK-123
 
+# Triage a PR's CodeRabbit findings: verdict per finding, approve once, then fix
+/coderabbit-triage 123
+
 # After the PRs merge: transition the ticket to done, mark completed, remove worktrees
 task-finish TASK-123 --cleanup
 ```

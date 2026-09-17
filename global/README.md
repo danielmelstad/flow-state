@@ -43,6 +43,10 @@ Enable via `/plugin` in Claude Code or the `enabledPlugins` map in
 - **superpowers**: process skills (brainstorming, TDD, debugging) the
   workflow's specialist agents pair well with.
 - **code-review**: PR review skill used alongside `/finish-task`.
+- **coderabbit**: the CodeRabbit review bot's skills. Its `autofix` skill is
+  denied in `settings.json.example` because the workspace replaces it with
+  `/coderabbit-triage`, which verdicts every finding before touching code.
+  The plugin's other skills stay available.
 - Anything else is personal preference; plugins are orthogonal to the
   workflow.
 
