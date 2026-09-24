@@ -128,6 +128,13 @@ shell command carrying a bearer token blocks this step; when that happens, link 
 source file instead of embedding the image, and say so rather than leaving the page
 looking finished.
 
+**Re-uploading an attachment mints a new media id.** Uploading under a filename that
+already exists creates version 2 of that attachment: the attachment id (`att…`) stays,
+but its `fileId`, which is what `data-id` on a media node points at, is new. Every figure
+referencing the old id then silently shows the previous image. After any re-upload, read
+the new `fileId` back with `getConfluenceAttachment` and repoint the figures; comparing
+`fileSize` against the local file confirms which version you are looking at.
+
 **`updateConfluencePage` needs a `snapshotToken`** for any change to a body, a title or
 the content width. Take it from the create/update response (`snapshot.token`) or from a
 `getConfluenceContent` read. For a small change, prefer `edits` with `replaceNode` and
