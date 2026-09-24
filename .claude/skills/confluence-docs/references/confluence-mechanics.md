@@ -112,6 +112,27 @@ ones; omit them on new nodes.
 If a fetched body looks incomplete or a publish fails validation, **stop and say what
 looks unsupported**. Do not overwrite destructively.
 
+## Constraints that cost a round trip
+
+**Page titles are unique per space.** Creating a page whose title already exists
+anywhere in the space succeeds, and Confluence silently appends ` (2)` to the title
+you asked for. Search the space for the title before creating a page, or pick one that
+will not collide, and rename with `updateConfluencePage` if it happens
+(`title` plus `snapshotToken`, no body needed).
+
+**Attachments need a local upload.** `createConfluenceAttachment` does not upload
+anything: it returns a short-lived upload URL, a bearer token and a ready-made `curl`
+command, and the bytes have to go up from a shell. Run that command, then use the
+returned media id and collection in the figure pattern above. A sandbox that blocks a
+shell command carrying a bearer token blocks this step; when that happens, link the
+source file instead of embedding the image, and say so rather than leaving the page
+looking finished.
+
+**`updateConfluencePage` needs a `snapshotToken`** for any change to a body, a title or
+the content width. Take it from the create/update response (`snapshot.token`) or from a
+`getConfluenceContent` read. For a small change, prefer `edits` with `replaceNode` and
+the node's fetched `data-local-id` over resending the whole body.
+
 ## Discovery
 
 The Confluence operations are a mix of primary tools (`searchConfluence`,
