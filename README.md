@@ -213,6 +213,7 @@ The workspace ships Claude Code configuration that automates the workflow end to
 - **`CLAUDE.md`** (tracked): the generic workflow, i.e. how tasks, manifests, worktrees, and the ticket lifecycle work.
 - **`CLAUDE.local.md`** (untracked, from `CLAUDE.local.md.example`): your repositories, your issue tracker connection, your team conventions.
 - **`<repo>/CLAUDE.md`** (per project): commands and conventions; see `examples/example-service/`.
+- **`.bin/tempo-log` + `/log-time` skill** (optional): derives Tempo time entries from Claude Code sessions and ticket-prefixed commits, reviewed by the user before anything posts; see "Time logging" in `CLAUDE.md`.
 
 Recommended plugins/connections, all optional and provider-agnostic:
 

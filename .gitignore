@@ -13,6 +13,15 @@
 !.bin/
 !.bin/**
 
+.bin/**/__pycache__/
+.bin/**/.pytest_cache/
+# tempo-log per-machine config and state
+.tempo-log.toml
+.tempo-log/
+.venv-tempo-log/
+!.tempo-log.toml.example
+!pytest.ini
+
 # Global-layer templates (~/.claude seeding)
 !global/
 !global/**
