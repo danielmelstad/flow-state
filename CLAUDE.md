@@ -104,7 +104,7 @@ manual fallback.
 │   └── TASK-200/
 │       └── repo-b/                # Separate worktree, same repo, no conflict
 ├── .claude/agents/                # Specialist agents
-├── .docs/                         # Central documentation hub
+├── .docs/                         # Local scratch (gitignored): planner plans in .docs/plans/
 └── <repo>/                        # Main git repositories (stay on default branch)
 ```
 
@@ -159,13 +159,17 @@ TASK-124: Update chart values for new pipeline
 
 | Agent | Model | Effort | Use Case | Invocation |
 |-------|-------|--------|----------|------------|
-| `planner` | Fable | xhigh | Implementation plans before coding (cross-repo aware) | "Use planner on TASK-123" |
-| `code-reviewer` | Opus | high | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
-| `security-reviewer` | Fable | xhigh | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
-| `test-writer` | Opus | default | Writing unit/integration tests | "Use test-writer for repo-b" |
-| `performance-analyzer` | Opus | high | Finding bottlenecks, optimization | "Use performance-analyzer on repo-a" |
-| `refactorer` | Opus | default | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
-| `documentation-writer` | Opus | default | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
+| `planner` | Fable | xhigh | Implementation plans before coding (cross-repo aware); the only plan author | "Use planner on TASK-123" |
+| `code-reviewer` | Opus | high | Ad-hoc and cross-repo ticket reviews | "Use code-reviewer on TASK-123" |
+| `security-reviewer` | Fable | xhigh | Security review of a ticket's changes, or a directory audit | "Use security-reviewer on TASK-123" |
+| `test-writer` | Opus | default | Coverage for existing code (never inside an SDD task) | "Use test-writer on TASK-123" |
+| `performance-analyzer` | Opus | high | Finding bottlenecks, optimization | "Use performance-analyzer on TASK-123" |
+| `refactorer` | Opus | default | Behavior-preserving restructuring across files | "Use refactorer on TASK-123" |
+| `documentation-writer` | Opus | default | In-repo docs; drafts for the documentation home | "Use documentation-writer on TASK-123" |
+
+Every agent resolves its target the same way: given a ticket ID it works in
+`.worktrees/<TICKET>/<repo>/`; a bare repo name means the main checkout, which
+agents may analyze but never edit.
 
 ### Model policy
 
@@ -201,6 +205,24 @@ reads the task manifest and the tracker, and knows the workspace rules
 (ticket-prefixed commits, the no-mistakes gate, `/finish-task`). Skip it only
 for genuinely trivial work: a typo, a one-line change, a rename.
 
+### Working with superpowers
+
+Where superpowers skills and these agents cover the same ground:
+
+- **Planning:** `planner` replaces `writing-plans`. When brainstorming hands
+  off to `writing-plans`, dispatch `planner` instead, with the spec path in the
+  prompt. Its Tasks section is written for `subagent-driven-development` to
+  execute directly, so there is one plan per ticket.
+- **Reviews inside superpowers flows** (per-task reviews, the final
+  whole-branch review, `requesting-code-review`) dispatch `general-purpose`
+  with the superpowers `code-reviewer.md` template, which carries the plan and
+  spec for compliance checking. Do not substitute the `code-reviewer` agent
+  there. The final review runs on Fable (pass `model` on the dispatch).
+- **Tests for new code** are written first by the implementer (superpowers
+  TDD). `test-writer` only adds coverage to code that already exists.
+- **Cleanup:** `code-simplifier` polishes recently written code; `refactorer`
+  does behavior-preserving restructuring across files.
+
 Agents can be chained:
 ```
 "First use code-reviewer on TASK-123, then use security-reviewer on repo-a"
@@ -208,13 +230,14 @@ Agents can be chained:
 
 ## Documentation
 
-All generated documentation goes to `.docs/<project>/`:
-```
-.docs/
-├── README.md                      # Index of all project docs
-├── <project>/
-│   ├── managers/                  # Non-technical stakeholder docs
-│   ├── developers/                # Technical documentation
-│   └── reference/                 # API/schema reference
-└── ...
-```
+One source of truth per fact, cited rather than copied:
+
+- **Versioned with the code** (READMEs, docstrings, decision records, runbooks
+  that call repo scripts, configuration and naming references): lives in the
+  repo, edited in the ticket worktree.
+- **Long-form docs with no repo home** (the why, current status, the
+  operator-facing overview, the glossary): live in the documentation home
+  named in CLAUDE.local.md, and link to the in-repo docs.
+- **`.docs/` is gitignored local scratch**, not a documentation home. It holds
+  `planner` output (`.docs/plans/`) and working notes; nothing there reaches a
+  reader.

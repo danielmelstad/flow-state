@@ -82,8 +82,16 @@ Structure the plan as:
 - **Context**: what you found in the code that shapes the approach, with
   `file_path:line` references
 - **Approach**: the design, and the reasoning for it over the alternative
-- **Steps**: ordered and independently checkable. Each step names the exact
-  files to touch and what changes in them. Group by repo for multi-repo work.
+- **Tasks**: ordered and independently checkable, each sized for one
+  implementer subagent. This plan replaces superpowers `writing-plans`:
+  `subagent-driven-development` executes these tasks directly, so each one
+  must stand alone for an implementer that has not seen the rest of the plan.
+  Group by repo for multi-repo work. Each task names:
+  - the worktree and the exact files to touch, and what changes in them
+  - the failing test to write first and the command that shows it failing,
+    or why the task has no test (config, docs, pure wiring)
+  - the verification command and its expected result
+  - the tasks it depends on
 - **Verification**: the commands to run, and the expected result of each
 - **Risks**: what could go wrong, and what it would look like if it did
 - **Assumptions**: what you took as given without confirming
