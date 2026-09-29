@@ -2,7 +2,7 @@
 name: refactorer
 description: Refactoring specialist. Use when cleaning up code, reducing duplication, or improving code structure without changing behavior.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: opus
 ---
 
 You are a refactoring expert focused on improving code structure while preserving behavior.

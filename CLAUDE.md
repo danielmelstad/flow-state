@@ -157,15 +157,36 @@ TASK-124: Update chart values for new pipeline
 
 ## Specialist Agents
 
-| Agent | Use Case | Invocation |
-|-------|----------|------------|
-| `planner` | Implementation plans before coding (runs on Fable, cross-repo aware) | "Use planner on TASK-123" |
-| `code-reviewer` | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
-| `security-reviewer` | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
-| `test-writer` | Writing unit/integration tests | "Use test-writer for repo-b" |
-| `performance-analyzer` | Finding bottlenecks, optimization | "Use performance-analyzer on repo-a" |
-| `refactorer` | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
-| `documentation-writer` | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
+| Agent | Model | Use Case | Invocation |
+|-------|-------|----------|------------|
+| `planner` | Fable | Implementation plans before coding (cross-repo aware) | "Use planner on TASK-123" |
+| `code-reviewer` | Opus | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
+| `security-reviewer` | Fable | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
+| `test-writer` | Opus | Writing unit/integration tests | "Use test-writer for repo-b" |
+| `performance-analyzer` | Opus | Finding bottlenecks, optimization | "Use performance-analyzer on repo-a" |
+| `refactorer` | Opus | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
+| `documentation-writer` | Opus | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
+
+### Model policy
+
+Quality outranks token cost: cheaper models take more turns and more review
+rounds, so they rarely save anything. Fable goes where a miss is costliest
+(direction-setting and last-look review that runs rarely); Opus does
+everything that produces artifacts. Sonnet and Haiku are not used in the
+pipeline.
+
+| Stage | Model |
+|-------|-------|
+| Main session (brainstorming, specs, orchestration) | Opus (settings default); `/model fable` for design-heavy spec sessions |
+| Planning (`planner`) | Fable |
+| Subagent implementers and per-task reviewers | Opus |
+| Fix-loop escalation and the final whole-branch review | Fable |
+| no-mistakes gate (all steps, one global setting) | Opus: it runs on every PR, so Fable's latency is too costly there |
+| Search-only built-ins (`Explore`) | Harness default |
+
+This overrides the superpowers `subagent-driven-development` "Model
+Selection" section, which picks the least powerful model per role. When that
+skill dispatches a subagent, pass the model from this table explicitly.
 
 **Plan mode uses `planner`, not the generic planning agent.** Before writing a
 plan file for any non-trivial or multi-repo task, dispatch the `planner` agent

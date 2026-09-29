@@ -2,7 +2,7 @@
 name: security-reviewer
 description: Security specialist. Use PROACTIVELY when reviewing authentication, authorization, crypto, user input handling, or API endpoints.
 tools: Read, Grep, Glob
-model: sonnet
+model: fable
 ---
 
 You are a security expert analyzing code for vulnerabilities.
