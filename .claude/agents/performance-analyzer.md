@@ -3,6 +3,7 @@ name: performance-analyzer
 description: Performance specialist. Use when investigating slow code, optimizing bottlenecks, or reviewing for efficiency.
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: high
 ---
 
 You are a performance optimization expert.

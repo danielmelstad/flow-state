@@ -157,15 +157,15 @@ TASK-124: Update chart values for new pipeline
 
 ## Specialist Agents
 
-| Agent | Model | Use Case | Invocation |
-|-------|-------|----------|------------|
-| `planner` | Fable | Implementation plans before coding (cross-repo aware) | "Use planner on TASK-123" |
-| `code-reviewer` | Opus | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
-| `security-reviewer` | Fable | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
-| `test-writer` | Opus | Writing unit/integration tests | "Use test-writer for repo-b" |
-| `performance-analyzer` | Opus | Finding bottlenecks, optimization | "Use performance-analyzer on repo-a" |
-| `refactorer` | Opus | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
-| `documentation-writer` | Opus | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
+| Agent | Model | Effort | Use Case | Invocation |
+|-------|-------|--------|----------|------------|
+| `planner` | Fable | xhigh | Implementation plans before coding (cross-repo aware) | "Use planner on TASK-123" |
+| `code-reviewer` | Opus | high | Code quality, PR reviews (cross-repo aware) | "Use code-reviewer on TASK-123" |
+| `security-reviewer` | Fable | xhigh | Security audits, vulnerability detection | "Use security-reviewer on repo-a/auth" |
+| `test-writer` | Opus | default | Writing unit/integration tests | "Use test-writer for repo-b" |
+| `performance-analyzer` | Opus | high | Finding bottlenecks, optimization | "Use performance-analyzer on repo-a" |
+| `refactorer` | Opus | default | Code cleanup, reducing duplication | "Use refactorer on repo-b" |
+| `documentation-writer` | Opus | default | READMEs, API docs, code comments | "Use documentation-writer for repo-a" |
 
 ### Model policy
 
@@ -173,7 +173,11 @@ Quality outranks token cost: cheaper models take more turns and more review
 rounds, so they rarely save anything. Fable goes where a miss is costliest
 (direction-setting and last-look review that runs rarely); Opus does
 everything that produces artifacts. Sonnet and Haiku are not used in the
-pipeline.
+pipeline. Effort (the agent `effort:` frontmatter field) follows the same
+split: raised for judgment agents (planning, review, diagnosis), left at the
+default for agents that produce code, tests, or docs. `max` is not used as a
+standing default: it adds latency to every call with no demonstrated gain
+over `xhigh`.
 
 | Stage | Model |
 |-------|-------|
