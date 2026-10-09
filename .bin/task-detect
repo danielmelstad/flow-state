@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-detect: Scan repos for shared ticket branches, create manifests
-# Usage: task-detect [--dry-run]
+# task-detect: Scan repos for shared ticket branches; with --write, create manifests
+# Usage: task-detect [--write]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/task-lib"
@@ -11,20 +11,26 @@ source "$SCRIPT_DIR/task-lib"
 # Matches PROJECT-NUMBER ticket IDs (TASK-123, INFRA-42-suffix, ...); override via env TICKET_PATTERN
 TICKET_PATTERN="${TICKET_PATTERN:-^[A-Z][A-Z0-9]*-[0-9]+}"
 
-DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && {
-    echo "Usage: task-detect [--dry-run]"
+usage() {
+    echo "Usage: task-detect [--write]"
     echo ""
     echo "Scans all git repos for branches matching ticket patterns"
     echo "(pattern: $TICKET_PATTERN)"
-    echo "and creates task manifests for tickets that appear in 2+ repos."
-    echo "Also scans .worktrees/ for existing worktree directories."
+    echo "and lists tickets that appear in 2+ repos. Also scans .worktrees/."
+    echo "Read-only by default: remote branches outlive their tickets, so a fresh"
+    echo "clone would otherwise get a manifest for every finished ticket."
     echo ""
     echo "Options:"
-    echo "  --dry-run   Show what would be created without writing files"
-    exit 0
+    echo "  --write     Create a manifest (status: active) for each listed ticket"
 }
+
+WRITE=false
+case "${1:-}" in
+    "") ;;
+    --write) WRITE=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 1 ;;
+esac
 
 # Associative arrays:
 # TICKET_REPOS[ticket] = space-separated "repo:branch" (one per unique repo, best branch wins)
@@ -156,7 +162,8 @@ for ticket in $(echo "${!TICKET_REPOS[@]}" | tr ' ' '\n' | sort); do
     repo_names=$(echo "$entries" | tr ' ' '\n' | sed '/^$/d' | cut -d: -f1 | sort -u | tr '\n' ' ')
     echo -e "  $ticket: ${GREEN}$repo_count repos${NC}: $repo_names"
 
-    if [[ "$DRY_RUN" == true ]]; then
+    if [[ "$WRITE" != true ]]; then
+        ((created++)) || true
         continue
     fi
 
@@ -191,11 +198,15 @@ done
 
 echo ""
 echo -e "${BOLD}Summary:${NC}"
-echo "  Created: $created manifest(s)"
+if [[ "$WRITE" == true ]]; then
+    echo "  Created: $created manifest(s)"
+else
+    echo "  Would create: $created manifest(s)"
+fi
 echo "  Already existed: $already_exists"
 echo "  Single-repo tickets skipped: $skipped"
 
-if [[ "$DRY_RUN" == true ]]; then
+if [[ "$WRITE" != true ]]; then
     echo ""
-    echo "(Dry run: no files written. Remove --dry-run to create manifests.)"
+    echo "(Preview only: no files written. Pass --write to create manifests.)"
 fi

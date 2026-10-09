@@ -167,8 +167,8 @@ task-clean --stale        # remove worktrees with no manifest
 If repos already have matching branches from prior work:
 
 ```bash
-task-detect               # scan repos, create manifests for multi-repo tickets
-task-detect --dry-run     # preview only
+task-detect               # list multi-repo ticket branches (read-only)
+task-detect --write       # also create a manifest for each
 ```
 
 ## Task Manifests
@@ -200,7 +200,7 @@ The manifest is deliberately thin machine state: it maps the ticket to repos and
 | `task-switch` | Create/verify worktrees for an existing task |
 | `task-status` | Show git state for one task or all tasks |
 | `task-finish` | Verify clean state and mark task as completed |
-| `task-detect` | Scan repos for branch patterns, generate manifests |
+| `task-detect` | List cross-repo ticket branches; `--write` generates manifests |
 | `task-prs` | Push branches and create PRs across repos |
 | `task-pr-status` | Show PR state, reviews, and CI checks |
 | `task-clean` | Remove worktrees (per-task, completed, stale, or list usage) |

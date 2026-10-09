@@ -147,7 +147,7 @@ the cache together.
 | `task-status` | Show git state for a task or all tasks | `task-status TASK-123` or `task-status` |
 | `task-switch` | Create/verify worktrees for a task | `task-switch TASK-123` |
 | `task-finish` | Check uncommitted work, mark complete | `task-finish TASK-123 [--cleanup]` |
-| `task-detect` | Scan repos + worktrees for ticket branches | `task-detect` |
+| `task-detect` | List cross-repo ticket branches; `--write` creates a manifest for each | `task-detect [--write]` |
 | `task-prs` | Create PRs across repos (requires `gh`) | `task-prs TASK-123` |
 | `task-pr-status` | Check PR status across repos (requires `gh`) | `task-pr-status TASK-123` |
 | `task-clean` | Remove worktrees for tasks | `task-clean TASK-123` or `task-clean --list` |

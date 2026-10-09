@@ -21,7 +21,7 @@ show_task_detail() {
 
     if [[ ! -f "$manifest" ]]; then
         echo "Error: No manifest found for $ticket" >&2
-        echo "Run 'task-detect' to discover tasks or 'task-start $ticket <repos>' to create one" >&2
+        echo "Run 'task-detect --write' to adopt existing branches or 'task-start $ticket <repos>' to create one" >&2
         exit 1
     fi
 
@@ -122,7 +122,7 @@ show_task_detail() {
 show_all_tasks() {
     if [[ ! -d "$TASKS_DIR" ]] || ! ls "$TASKS_DIR"/*.yaml &>/dev/null; then
         echo "No task manifests found in .tasks/"
-        echo "Run 'task-detect' to discover existing cross-repo tasks"
+        echo "Run 'task-detect' to list existing cross-repo branches ('--write' creates manifests)"
         echo "Or 'task-start <TICKET> <repo1> [repo2] ...' to create one"
         exit 0
     fi

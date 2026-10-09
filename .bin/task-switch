@@ -33,7 +33,7 @@ fi
 MANIFEST="$TASKS_DIR/$TICKET.yaml"
 if [[ ! -f "$MANIFEST" ]]; then
     echo "Error: No manifest found for $TICKET" >&2
-    echo "Run 'task-detect' or 'task-start $TICKET <repos>' first" >&2
+    echo "Run 'task-detect --write' or 'task-start $TICKET <repos>' first" >&2
     exit 1
 fi
 
