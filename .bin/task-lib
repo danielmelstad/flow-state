@@ -1,4 +1,4 @@
-# task-lib — Shared library for task scripts
+# task-lib: Shared library for task scripts
 # Source this file, do not execute directly.
 # Usage: SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #        source "$SCRIPT_DIR/task-lib"

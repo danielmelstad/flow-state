@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-pr-status — Check PR status across repos for a task
+# task-pr-status: Check PR status across repos for a task
 # Usage: task-pr-status <TICKET-ID>
 # Requires: gh CLI (https://cli.github.com)
 

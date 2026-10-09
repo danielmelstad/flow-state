@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-prs — Create PRs across all repos for a task
+# task-prs: Create PRs across all repos for a task
 # Usage: task-prs <TICKET-ID> [--base main] [--title "PR title"] [--body "PR body"]
 # Requires: gh CLI (https://cli.github.com)
 
@@ -166,5 +166,5 @@ echo ""
 echo -e "${BOLD}Summary:${NC} $created PR(s) created, $errors error(s)"
 
 if [[ "$DRY_RUN" == true ]]; then
-    echo "(Dry run — no PRs created)"
+    echo "(Dry run: no PRs created)"
 fi

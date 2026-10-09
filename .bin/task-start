@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-start — Create branches + worktrees across repos + generate task manifest
+# task-start: Create branches + worktrees across repos + generate task manifest
 # Usage: task-start <TICKET-ID> <repo1> [repo2] [repo3] ...
 # Example: task-start TASK-124 repo-a repo-b
 

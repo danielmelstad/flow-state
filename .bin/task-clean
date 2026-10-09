@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-clean — Remove worktrees for tasks
+# task-clean: Remove worktrees for tasks
 # Usage: task-clean <TICKET-ID>... | --completed | --stale | --list
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-status — Show git state across repos for a task (or all tasks)
+# task-status: Show git state across repos for a task (or all tasks)
 # Usage: task-status [TICKET-ID]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

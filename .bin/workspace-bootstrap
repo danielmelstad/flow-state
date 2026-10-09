@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# workspace-bootstrap — recreate a multi-repo workspace on a new machine.
+# workspace-bootstrap: recreate a multi-repo workspace on a new machine.
 #
 # The set of repositories is data, not code: it lives in repos.list at the
 # workspace root (one "name|origin-url" per line, # comments allowed).
@@ -25,7 +25,7 @@ command -v git >/dev/null 2>&1 || { echo "error: git is required" >&2; exit 1; }
 
 snapshot() {
     {
-        echo "# Repositories in this workspace — consumed by workspace-bootstrap."
+        echo "# Repositories in this workspace, consumed by workspace-bootstrap."
         echo "# Format: name|origin-url   (# comments and blank lines ignored)"
         echo "# Regenerate from the current workspace: workspace-bootstrap --snapshot"
         for d in "$ROOT"/*/; do

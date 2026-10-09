@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-detect — Scan repos for shared ticket branches, create manifests
+# task-detect: Scan repos for shared ticket branches, create manifests
 # Usage: task-detect [--dry-run]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -154,7 +154,7 @@ for ticket in $(echo "${!TICKET_REPOS[@]}" | tr ' ' '\n' | sort); do
 
     # Show unique repo names
     repo_names=$(echo "$entries" | tr ' ' '\n' | sed '/^$/d' | cut -d: -f1 | sort -u | tr '\n' ' ')
-    echo -e "  $ticket: ${GREEN}$repo_count repos${NC} — $repo_names"
+    echo -e "  $ticket: ${GREEN}$repo_count repos${NC}: $repo_names"
 
     if [[ "$DRY_RUN" == true ]]; then
         continue
@@ -197,5 +197,5 @@ echo "  Single-repo tickets skipped: $skipped"
 
 if [[ "$DRY_RUN" == true ]]; then
     echo ""
-    echo "(Dry run — no files written. Remove --dry-run to create manifests.)"
+    echo "(Dry run: no files written. Remove --dry-run to create manifests.)"
 fi

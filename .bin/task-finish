@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-finish — Check uncommitted work and mark task as completed
+# task-finish: Check uncommitted work and mark task as completed
 # Usage: task-finish <TICKET-ID> [--force] [--cleanup]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,7 +91,7 @@ while IFS= read -r repo; do
                 continue
             fi
         else
-            # Remote branch doesn't exist — entire branch is unpushed
+            # Remote branch doesn't exist: entire branch is unpushed
             unpushed_repos+=("$repo")
             echo -e "${YELLOW}branch not pushed to origin${NC}"
             continue

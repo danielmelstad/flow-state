@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# task-switch — Create/verify worktrees for a task
+# task-switch: Create/verify worktrees for a task
 # Usage: task-switch <TICKET-ID>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
