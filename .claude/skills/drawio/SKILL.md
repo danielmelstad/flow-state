@@ -15,7 +15,7 @@ Generate draw.io diagrams as native `.drawio` files. Optionally export to PNG, S
    - `png` / `svg` / `pdf` → locate the draw.io CLI (see [draw.io CLI](#drawio-cli)), export with `--embed-diagram`, then delete the source `.drawio` file. If the CLI is not found, keep the `.drawio` file and tell the user they can install the draw.io desktop app to enable export, or use `url` mode instead, or open the `.drawio` file directly
    - `url` → generate a browser URL from the XML and open it (see [Browser URL output](#browser-url-output)). Keep the `.drawio` file as a persistent local copy
    - *(no format)* → no extra step; the `.drawio` file is the output
-4. **Open the result** — the exported file if exported, the browser URL if `url`, or the `.drawio` file otherwise. If the open command fails, print the file path (or URL) so the user can open it manually
+4. **Open the result**: the exported file if exported, the browser URL if `url`, or the `.drawio` file otherwise. If the open command fails, print the file path (or URL) so the user can open it manually
 
 ## Choosing the output format
 
@@ -38,11 +38,11 @@ If no format is mentioned, just write the `.drawio` file and open it in draw.io.
 | `pdf` | Yes (`-e`) | Printable, editable in draw.io |
 | `jpg` | No | Lossy, no embedded XML support |
 
-PNG, SVG, and PDF all support `--embed-diagram` — the exported file contains the full diagram XML, so opening it in draw.io recovers the editable diagram.
+PNG, SVG, and PDF all support `--embed-diagram`: the exported file contains the full diagram XML, so opening it in draw.io recovers the editable diagram.
 
 ## Browser URL output
 
-When the user requests `url` format, generate a draw.io URL that opens the diagram directly in the browser editor at `app.diagrams.net` — no draw.io Desktop required.
+When the user requests `url` format, generate a draw.io URL that opens the diagram directly in the browser editor at `app.diagrams.net` (no draw.io Desktop required).
 
 ### How it works
 
@@ -51,7 +51,7 @@ When the user requests `url` format, generate a draw.io URL that opens the diagr
 3. The result is embedded in a `https://app.diagrams.net/#create=...` URL
 4. The URL is opened in the default browser
 
-This uses only Node.js built-in modules (`zlib`, `child_process`) — no external dependencies.
+This uses only Node.js built-in modules (`zlib`, `child_process`); no external dependencies.
 
 ### URL generation
 
@@ -220,13 +220,13 @@ cmd.exe /c start "" "$(wslpath -w diagram.drawio)"
 
 - Use a descriptive filename based on the diagram content (e.g., `login-flow`, `database-schema`)
 - Use lowercase with hyphens for multi-word names
-- For export, use double extensions: `name.drawio.png`, `name.drawio.svg`, `name.drawio.pdf` — this signals the file contains embedded diagram XML
-- After a successful export, delete the intermediate `.drawio` file — the exported file contains the full diagram
-- For `url` mode, keep the `.drawio` file (no double extension) — the URL is a view/edit handle and the local file is the persistent copy
+- For export, use double extensions: `name.drawio.png`, `name.drawio.svg`, `name.drawio.pdf`; this signals the file contains embedded diagram XML
+- After a successful export, delete the intermediate `.drawio` file: the exported file contains the full diagram
+- For `url` mode, keep the `.drawio` file (no double extension): the URL is a view/edit handle and the local file is the persistent copy
 
 ## XML format
 
-A `.drawio` file is native mxGraphModel XML. Always generate XML directly — Mermaid and CSV formats require server-side conversion and cannot be saved as native files.
+A `.drawio` file is native mxGraphModel XML. Always generate XML directly: Mermaid and CSV formats require server-side conversion and cannot be saved as native files.
 
 ### Basic structure
 
@@ -265,7 +265,7 @@ choosing colours:
 
 `adaptiveColors="auto"` and `light-dark()` both switch on the *viewer's* theme,
 and export is always the light branch. So neither can produce a dark exported
-image — a dark export needs a genuinely dark palette. Conversely, a pinned dark
+image: a dark export needs a genuinely dark palette. Conversely, a pinned dark
 `background` combined with adaptive or `light-dark()` fills exports light boxes
 on a dark ground, which is broken. Pick one row of that table and be consistent.
 
@@ -298,7 +298,7 @@ Two related traps in `html=1` labels, which is all of them:
 
 - A literal `<` or `>` in label text must be written `&amp;lt;` / `&amp;gt;`, not
   `&lt;` / `&gt;`. `&lt;env&gt;` reaches the renderer as `<env>`, which the HTML
-  label parser treats as an unknown tag and **renders as nothing** — so
+  label parser treats as an unknown tag and **renders as nothing**, so
   placeholder names silently vanish. Double-escaping is correct here.
 - Line breaks inside a label are `&#10;`.
 
@@ -320,11 +320,11 @@ https://raw.githubusercontent.com/jgraph/drawio-mcp/main/shared/xml-reference.md
 | Pale strips behind edge labels on a dark page | draw.io's default light edge-label background | Set `labelBackgroundColor` to the page colour on every labelled edge |
 | Edges not rendering | Edge mxCell is self-closing (no child mxGeometry element) | Every edge must have `<mxGeometry relative="1" as="geometry" />` as a child element |
 | File won't open after export | Incorrect file path or missing file association | Print the absolute file path so the user can open it manually |
-| Browser opens with empty diagram in `url` mode | `cmd.exe` stripped the `#create=...` fragment | Use the `.url` temp-file workaround on Windows/WSL2 (see [Opening the URL](#opening-the-url)) — never pass the URL directly to `cmd.exe /c start` |
+| Browser opens with empty diagram in `url` mode | `cmd.exe` stripped the `#create=...` fragment | Use the `.url` temp-file workaround on Windows/WSL2 (see [Opening the URL](#opening-the-url)); never pass the URL directly to `cmd.exe /c start` |
 | URL is too long for the browser | Very large diagram exceeds browser URL length limit | Fall back to writing the `.drawio` file and opening it locally |
 
 ## CRITICAL: XML well-formedness
 
-- **NEVER include ANY XML comments (`<!-- -->`) in the output.** XML comments are strictly forbidden — they waste tokens, can cause parse errors, and serve no purpose in diagram XML.
+- **NEVER include ANY XML comments (`<!-- -->`) in the output.** XML comments are strictly forbidden: they waste tokens, can cause parse errors, and serve no purpose in diagram XML.
 - Escape special characters in attribute values: `&amp;`, `&lt;`, `&gt;`, `&quot;`
 - Always use unique `id` values for each `mxCell`

@@ -36,7 +36,7 @@ examples/**/*.egg-info/
 !.claude/**
 .claude/settings.local.json
 
-# Ephemeral / generated — always exclude
+# Ephemeral / generated: always exclude
 .worktrees/
 .playwright-mcp/
 .vscode/

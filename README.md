@@ -11,7 +11,7 @@ When a single task (bug fix, feature, migration) touches 3-4 repositories at onc
 - Avoid conflicts when two tasks share a repo (e.g., both need `repo-b`)
 - Create PRs and check status across all repos at once
 
-The naive approach — `git checkout` in each repo — breaks down as soon as you have overlapping tasks. Checking out task B in a shared repo wipes out task A's working context.
+The naive approach (`git checkout` in each repo) breaks down as soon as you have overlapping tasks. Checking out task B in a shared repo wipes out task A's working context.
 
 ## The Solution
 
@@ -33,7 +33,7 @@ projects/
 └── .bin/                  ← task scripts
 ```
 
-Worktrees share git objects with the main repo — only working tree files are duplicated, keeping disk usage minimal.
+Worktrees share git objects with the main repo: only working tree files are duplicated, keeping disk usage minimal.
 
 ## Setup
 
@@ -94,9 +94,9 @@ This:
 3. Generates a manifest at `.tasks/TASK-100.yaml`
 
 Options:
-- `-d "description"` — add a description to the manifest
-- `-b develop` — branch from `develop` instead of `main`
-- `--no-worktree` — create branches only, skip worktree creation
+- `-d "description"`: add a description to the manifest
+- `-b develop`: branch from `develop` instead of `main`
+- `--no-worktree`: create branches only, skip worktree creation
 
 ### Switching to an existing task
 
@@ -108,7 +108,7 @@ Creates worktrees if they don't exist yet, or confirms they're ready.
 
 ### Working in worktrees
 
-Work in `.worktrees/<task>/<repo>/` just like a normal repo — edit, commit, push:
+Work in `.worktrees/<task>/<repo>/` just like a normal repo (edit, commit, push):
 
 ```bash
 cd .worktrees/TASK-100/repo-a/
@@ -231,11 +231,11 @@ No tracker connected? Everything still works: task state falls back to the manif
 
 The scripts make minimal assumptions. To adapt them:
 
-1. **`repos.list`** — your set of repositories (`workspace-bootstrap --snapshot` regenerates it from what is cloned)
-2. **`TICKET_PATTERN`** in `task-detect` — regex matching your ticket ID format
-3. **Skip list** in `task-detect` — directories to ignore when scanning (default: `.tasks`, `.bin`, `.docs`, `.worktrees`)
-4. **`CLAUDE.local.md`** — workspace-specific context for Claude Code
-5. **Per-repo setup** — see `examples/example-service/` for the reference shape of a project: project-level `CLAUDE.md`, pinned validation gate (`.no-mistakes.yaml` + `scripts/gate.sh`), exact-pinned dev dependencies
+1. **`repos.list`**: your set of repositories (`workspace-bootstrap --snapshot` regenerates it from what is cloned)
+2. **`TICKET_PATTERN`** in `task-detect`: regex matching your ticket ID format
+3. **Skip list** in `task-detect`: directories to ignore when scanning (default: `.tasks`, `.bin`, `.docs`, `.worktrees`)
+4. **`CLAUDE.local.md`**: workspace-specific context for Claude Code
+5. **Per-repo setup**: see `examples/example-service/` for the reference shape of a project (project-level `CLAUDE.md`, pinned validation gate in `.no-mistakes.yaml` + `scripts/gate.sh`, exact-pinned dev dependencies)
 
 `PROJECTS_DIR` is derived automatically from the script location. Everything else is derived from the manifests, so it works with any set of repositories.
 
@@ -243,9 +243,9 @@ The scripts make minimal assumptions. To adapt them:
 
 A git worktree is a linked working tree that shares the same `.git` object store as the main repo. This means:
 
-- **Low disk usage** — only working tree files are duplicated, not git history
-- **Shared refs** — branches, tags, and remotes are visible from all worktrees
-- **Independent state** — each worktree has its own HEAD, index, and working tree
-- **One branch per worktree** — git prevents two worktrees from checking out the same branch
+- **Low disk usage**: only working tree files are duplicated, not git history
+- **Shared refs**: branches, tags, and remotes are visible from all worktrees
+- **Independent state**: each worktree has its own HEAD, index, and working tree
+- **One branch per worktree**: git prevents two worktrees from checking out the same branch
 
 When a task script needs to create a worktree for a branch that's currently checked out in the main repo, it automatically switches the main repo to its default branch first.
