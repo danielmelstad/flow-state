@@ -36,9 +36,6 @@ examples/**/*.egg-info/
 !.claude/**
 .claude/settings.local.json
 
-# Documentation hub (own git repo — excluded to avoid embedded repo)
-# docs/
-
 # Ephemeral / generated — always exclude
 .worktrees/
 .playwright-mcp/

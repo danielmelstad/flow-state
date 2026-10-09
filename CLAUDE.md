@@ -81,7 +81,8 @@ manual fallback.
 ```
 ~/projects/
 ├── CLAUDE.md                      # This file (generic workflow)
-├── CLAUDE.local.md                # Machine/team specifics (untracked)
+├── CLAUDE.local.md                # Machine/team specifics (untracked; template: CLAUDE.local.md.example)
+├── README.md                      # Human-facing overview of the workspace
 ├── repos.list                     # Child repos (name|url), untracked; see repos.list.example
 ├── .tasks/                        # Task manifests (one per ticket), untracked
 │   ├── TASK-123.yaml
@@ -103,7 +104,11 @@ manual fallback.
 │   │   └── repo-b/
 │   └── TASK-200/
 │       └── repo-b/                # Separate worktree, same repo, no conflict
-├── .claude/agents/                # Specialist agents
+├── .claude/
+│   ├── agents/                    # Specialist agents
+│   └── skills/                    # Workspace skills (/finish-task, /workspace-setup, ...)
+├── global/                        # Templates for seeding ~/.claude (see global/README.md)
+├── examples/example-service/      # Reference repo shape: project CLAUDE.md, pinned gate
 ├── .docs/                         # Local scratch (gitignored): planner plans in .docs/plans/
 └── <repo>/                        # Main git repositories (stay on default branch)
 ```
