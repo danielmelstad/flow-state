@@ -90,7 +90,8 @@ task-start TASK-100 repo-a repo-b repo-c
 
 This:
 1. Creates a `TASK-100` branch in each repo (from `main` by default)
-2. Creates worktrees at `.worktrees/TASK-100/<repo>/`
+2. Creates worktrees at `.worktrees/TASK-100/<repo>/`, copying each gitignored
+   `.env` file from the main checkout into them (see below)
 3. Generates a manifest at `.tasks/TASK-100.yaml`
 
 Options:
@@ -105,6 +106,16 @@ task-switch TASK-100
 ```
 
 Creates worktrees if they don't exist yet, or confirms they're ready.
+
+### Local secrets in worktrees
+
+A new worktree gets a copy of every gitignored `.env` file in the main
+checkout (at any depth, skipping ignored directories such as `node_modules/`),
+with its file mode kept. Worktrees usually share the main checkout's local
+services (a compose project's volumes, for example), so they need the same
+credentials: fill in the main checkout's `.env` once and every new worktree
+starts with it. An existing file in the worktree is never overwritten, and an
+`.env` changed later in the main checkout is not synced to existing worktrees.
 
 ### Working in worktrees
 

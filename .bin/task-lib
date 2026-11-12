@@ -89,6 +89,29 @@ worktree_path() {
     fi
 }
 
+# Copy the main checkout's gitignored .env files (at any depth, outside ignored
+# directories) into a new worktree, keeping their modes. A worktree shares the main
+# checkout's local services (e.g. compose volumes), so it needs the same values.
+# Never overwrites. Notices go to stderr: callers capture stdout.
+# Usage: worktree_copy_env_files <repo_path> <wt_path>
+worktree_copy_env_files() {
+    local repo_path="$1" wt_path="$2" rel
+    while IFS= read -r rel; do
+        [[ -n "$rel" && "$rel" != */ && -f "$repo_path/$rel" ]] || continue
+        if [[ -e "$wt_path/$rel" ]]; then
+            echo "  Kept existing $rel in the worktree" >&2
+            continue
+        fi
+        mkdir -p "$(dirname "$wt_path/$rel")"
+        if cp -p "$repo_path/$rel" "$wt_path/$rel"; then
+            echo "  Copied $rel from the main checkout" >&2
+        else
+            echo "  Warning: could not copy $rel from the main checkout" >&2
+        fi
+    done < <(git -C "$repo_path" ls-files --others --ignored --exclude-standard --directory \
+        -- ':(glob)**/.env' 2>/dev/null)
+}
+
 # Create a worktree for a ticket+repo+branch
 # Handles: branch checked out in main repo (switches main to default first)
 # Usage: worktree_create <ticket> <repo> <branch>
@@ -131,6 +154,7 @@ worktree_create() {
 
     # Create worktree
     if git -C "$repo_path" worktree add "$wt_path" "$branch" 2>/dev/null; then
+        worktree_copy_env_files "$repo_path" "$wt_path"
         echo "$wt_path"
         return 0
     else

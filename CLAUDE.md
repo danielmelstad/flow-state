@@ -60,7 +60,9 @@ When a user says "work on TASK-123":
 
 **Worktree workflow:** Each task gets isolated working directories at
 `.worktrees/<ticket>/<repo>/`. Multiple tasks can be active simultaneously with
-no checkout conflicts. Main repos stay on their default branch.
+no checkout conflicts. Main repos stay on their default branch. A new worktree
+gets a copy of each gitignored `.env` in the main checkout (never overwriting),
+so local credentials live once, in the main checkout.
 
 **Task state lives in the issue tracker:** the tracker is the source of truth
 for ticket status, scope, and progress; comments are the cross-session handoff.
