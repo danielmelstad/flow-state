@@ -81,12 +81,14 @@ for repo in "${REPOS[@]}"; do
         continue
     fi
 
-    # Fetch latest and create branch from base
+    # Branch from the freshly fetched origin base: the main checkout's local base
+    # branch is never pulled, so it lags. --no-track keeps origin/<base> from
+    # becoming the ticket branch's upstream. Local base is the offline fallback.
     git -C "$repo_path" fetch --quiet origin 2>/dev/null || true
-    if git -C "$repo_path" show-ref --verify --quiet "refs/heads/$BASE_BRANCH" 2>/dev/null; then
+    if git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null; then
+        git -C "$repo_path" branch --no-track "$TICKET" "origin/$BASE_BRANCH"
+    elif git -C "$repo_path" show-ref --verify --quiet "refs/heads/$BASE_BRANCH" 2>/dev/null; then
         git -C "$repo_path" branch "$TICKET" "$BASE_BRANCH"
-    elif git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null; then
-        git -C "$repo_path" branch "$TICKET" "origin/$BASE_BRANCH"
     else
         echo "Warning: base branch '$BASE_BRANCH' not found, creating from HEAD" >&2
         git -C "$repo_path" branch "$TICKET"
